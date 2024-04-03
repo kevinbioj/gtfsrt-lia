@@ -1,0 +1,20 @@
+{
+  "name": "lia-gtfsrt-producer",
+  "module": "src/index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/proj4": "^2.5.5"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "croner": "^8.0.1",
+    "dayjs": "^1.11.10",
+    "fast-xml-parser": "^4.3.6",
+    "hono": "^4.2.1",
+    "pino": "^8.19.0",
+    "proj4": "^2.11.0"
+  }
+}
