@@ -292,5 +292,7 @@ server.get("/gtfs-rt/vehicle-positions", (c) => {
   });
 });
 
-export const port = 40505;
-export default server;
+export default {
+  fetch: server.fetch,
+  port: 40404,
+};

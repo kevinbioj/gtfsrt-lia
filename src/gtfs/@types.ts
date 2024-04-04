@@ -18,8 +18,6 @@ export type GtfsResource = {
 export type Stop = {
   id: string;
   name: string;
-  lat: number;
-  lon: number;
 };
 
 export type StopTime = {
@@ -31,10 +29,8 @@ export type StopTime = {
 export type Trip = {
   id: string;
   calendar: Calendar;
-  block: string | null;
   route: string;
   direction: number;
-  headsign: string;
   stops: StopTime[];
 };
 
@@ -54,7 +50,7 @@ export type TripUpdateEntity = {
   id: string;
   tripUpdate: {
     stopTimeUpdate: Array<{
-      scheduleRelationship?: 'SCHEDULED' | 'SKIPPED' | 'NO-DATA';
+      scheduleRelationship?: "SCHEDULED" | "SKIPPED" | "NO-DATA";
       arrival?: StopTimeEvent;
       departure?: StopTimeEvent;
       stopId: string;
@@ -81,7 +77,7 @@ export type GtfsRtTripUpdate = {
 export type VehiclePositionEntity = {
   id: string;
   vehicle: {
-    currentStatus?: 'STOPPED_AT' | 'IN_TRANSIT_TO';
+    currentStatus?: "STOPPED_AT" | "IN_TRANSIT_TO";
     currentStopSequence?: number;
     bearing: number;
     position: {
@@ -108,10 +104,7 @@ export type GtfsRtVehiclePosition = {
 
 // ---
 
-type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<
-  T,
-  Exclude<keyof T, Keys>
-> &
+type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<T, Exclude<keyof T, Keys>> &
   {
     [K in Keys]-?: Required<Pick<T, K>> & Partial<Pick<T, Exclude<Keys, K>>>;
   }[Keys];
