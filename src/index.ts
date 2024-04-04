@@ -181,7 +181,15 @@ async function updateGtfsRtEntries() {
         trip.route !== "T"
           ? trip.route
           : match([trip.stops.at(0)!.stop.name, trip.stops.at(-1)!.stop.name])
-              .with(P.union(["La Plage", "Grand Hameau"], ["Grand Hameau", "La Plage"]), () => "A")
+              .with(
+                P.union(
+                  ["La Plage", "Grand Hameau"],
+                  ["Rond-Point", "Grand Hameau"],
+                  ["Grand Hameau", "Rond-Point"],
+                  ["Grand Hameau", "La Plage"]
+                ),
+                () => "A"
+              )
               .with(
                 P.union(
                   ["La Plage", "Pré Fleuri"],
