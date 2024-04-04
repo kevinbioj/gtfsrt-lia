@@ -1,11 +1,15 @@
 export type SiriVehicleActivity = {
   RecordedAtTime: string;
+  ProgressBetweenStops: {
+    Percentage: number;
+  };
   MonitoredVehicleJourney: {
     LineRef: string;
     OriginRef: string;
     DestinationRef: string;
+    DestinationName: string;
     VehicleRef: string;
-    Monitored: 'true' | 'false';
+    Monitored: "true" | "false";
     VehicleLocation?: {
       Coordinates: string;
     };
@@ -17,8 +21,9 @@ export type SiriVehicleActivity = {
 
 export type SiriStopCall = {
   StopPointRef: string;
+  StopPointName: string;
   Order: number;
-  VehicleAtStop: 'true' | 'false';
-  AimedArrivalTime: string;
-  ExpectedArrivalTime: string;
+  VehicleAtStop: boolean;
+  AimedDepartureTime: string;
+  ExpectedDepartureTime: string;
 };

@@ -1,6 +1,6 @@
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser } from "fast-xml-parser";
 
-import type { SiriVehicleActivity } from '~/siri/@types';
+import type { SiriVehicleActivity } from "~/siri/@types";
 
 const parser = new XMLParser({ removeNSPrefix: true });
 
@@ -33,20 +33,18 @@ export async function computeSiriEntries(wsdl: string, lineRef: string) {
   const response = await fetch(wsdl, {
     body: body,
     headers: {
-      'Content-Type': 'application/xml',
-      'Content-Length': vehicleMonitoringRequestPayload.length.toString(),
-      'User-Agent': 'Bus-Tracker.xyz/1.0',
+      "Content-Type": "application/xml",
+      "Content-Length": vehicleMonitoringRequestPayload.length.toString(),
+      "User-Agent": "Bus-Tracker.xyz/1.0",
     },
-    method: 'POST',
+    method: "POST",
     signal: abortController.signal,
   });
   clearInterval(timeout);
-  if (!response.ok) return [];
+  if (!response.ok) return null;
   const payload = await response.text();
   const data = parser.parse(payload);
-  const vehicles = data.Envelope.Body.GetVehicleMonitoringResponse.Answer
-    .VehicleMonitoringDelivery.VehicleActivity as
-    | SiriVehicleActivity[]
-    | SiriVehicleActivity;
+  const vehicles = data.Envelope.Body.GetVehicleMonitoringResponse.Answer.VehicleMonitoringDelivery
+    .VehicleActivity as SiriVehicleActivity[] | SiriVehicleActivity;
   return Array.isArray(vehicles) ? vehicles : [vehicles];
 }
