@@ -117,10 +117,15 @@ async function updateGtfsRtEntries() {
       const id = parseSiriRef(vehicleJourney.VehicleRef);
 
       if (processedVehicles.includes(id)) return;
+
+      if (typeof vehicleJourney.LineRef === "undefined" || !vehicleJourney.Monitored)
+        return console.warn(`GTFS-RT  Vehicle '${id}' is not monitored or has no declared line.`);
+
+      const lineId = parseSiriRef(vehicleJourney.LineRef);
       if (typeof vehicleJourney.MonitoredCall === "undefined")
-        return console.warn(`GTFS-RT  Vehicle '${id}' has no monitored call.`);
+        return console.warn(`GTFS-RT  Vehicle '${id}' (line '${lineId}') has no monitored call.`);
       if (typeof vehicleJourney.VehicleLocation === "undefined")
-        return console.warn(`GTFS-RT  Vehicle '${id}' has no position.`);
+        return console.warn(`GTFS-RT  Vehicle '${id}' (line '${lineId}') has no position.`);
 
       const monitoredCall = vehicleJourney.MonitoredCall;
       const vehicleLocation = vehicleJourney.VehicleLocation;
@@ -149,9 +154,11 @@ async function updateGtfsRtEntries() {
         }) ?? [];
 
       if (compatibleTrips.length === 0)
-        return console.warn(`GTFS-RT  No trip found for vehicle '${id}'.`);
+        return console.warn(`GTFS-RT  No trip found for vehicle '${id}' (line '${lineId}') .`);
       if (compatibleTrips.length > 1) {
-        console.warn(`GTFS-RT   ${compatibleTrips.length} trips for vehicle '${id}'.`);
+        console.warn(
+          `GTFS-RT   ${compatibleTrips.length} trips for vehicle '${id}' (line '${lineId}') .`
+        );
         console.warn(`GTFS-RT   Trips are: ${compatibleTrips.map((t) => t.id).join(" - ")}`);
         return;
       }
