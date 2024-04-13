@@ -80,8 +80,6 @@ async function downloadNextSiriEntries() {
   setTimeout(downloadNextSiriEntries, 3000);
 }
 
-await downloadNextSiriEntries();
-
 //- UPDATE GTFS RESOURCE
 
 async function updateGtfsResource() {
@@ -144,8 +142,9 @@ async function updateGtfsRtEntries() {
               (s.stop.id === parseSiriRef(monitoredCall.StopPointRef) ||
                 s.stop.name === monitoredCall.StopPointName ||
                 s.sequence === monitoredCall.Order) &&
-              Math.abs(dayjs(monitoredCall.AimedDepartureTime).diff(parseTime(s.time), "seconds")) <
-                30
+              Math.abs(
+                dayjs(monitoredCall.AimedDepartureTime).diff(parseTime(s.time), "seconds")
+              ) <= 60
           );
         }) ?? [];
 
@@ -274,6 +273,8 @@ async function updateGtfsRtEntries() {
 }
 
 updateGtfsResource().then(async () => {
+  console.log("Initialization done! Starting fetching data.");
+  await downloadNextSiriEntries();
   await updateGtfsRtEntries();
   Cron("0,10,20,30,40,50 * * * * *", updateGtfsRtEntries);
 });
