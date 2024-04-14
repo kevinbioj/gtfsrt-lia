@@ -168,7 +168,7 @@ async function fetchNextLine(lineRef: string) {
       monitoredCall.DepartureStatus !== "noReport"
         ? monitoredCall.ExpectedDepartureTime
         : monitoredCall.ExpectedArrivalTime;
-    const atStop = monitoredCall.VehicleAtStop || (monitoredCall.Order === 1 && dayjs().isBefore(dayjs(expectedTime)));
+    const atStop = monitoredCall.VehicleAtStop || dayjs().isBefore(dayjs(expectedTime));
     const nextStopTimes = guessedTrip.stops.slice(monitoredStopTimeIdx + (atStop ? 0 : 1));
     const delay = dayjs(expectedTime).diff(parseTime(guessedTrip.stops[monitoredStopTimeIdx].time), "seconds");
 
