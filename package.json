@@ -2,6 +2,9 @@
   "name": "lia-gtfsrt-producer",
   "module": "src/index.ts",
   "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/proj4": "^2.5.5"

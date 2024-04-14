@@ -37,13 +37,13 @@ export type Trip = {
 //- GTFS Real-Time
 
 export type StopTimeEvent = {
-  delay?: number;
-  time?: string;
+  delay: number;
+  time: number;
 };
 
 export type VehicleDescriptor = {
   id: string;
-  label?: string;
+  label: string;
 };
 
 export type TripUpdateEntity = {
@@ -51,25 +51,26 @@ export type TripUpdateEntity = {
   tripUpdate: {
     stopTimeUpdate: Array<{
       scheduleRelationship?: "SCHEDULED" | "SKIPPED" | "NO-DATA";
-      arrival?: StopTimeEvent;
-      departure?: StopTimeEvent;
+      arrival: StopTimeEvent;
+      departure: StopTimeEvent;
       stopId: string;
       stopSequence?: number;
     }>;
-    timestamp: string;
+    timestamp: number;
     trip: {
       tripId: string;
-      routeId?: string;
-      directionId?: number;
+      routeId: string;
+      directionId: number;
     };
-    vehicle?: VehicleDescriptor;
+    vehicle: VehicleDescriptor;
   };
 };
 
 export type GtfsRtTripUpdate = {
   header: {
     gtfsRealtimeVersion: string;
-    timestamp: string;
+    incrementality: "FULL_DATASET";
+    timestamp: number;
   };
   entity: TripUpdateEntity[];
 };
@@ -77,18 +78,18 @@ export type GtfsRtTripUpdate = {
 export type VehiclePositionEntity = {
   id: string;
   vehicle: {
-    currentStatus?: "STOPPED_AT" | "IN_TRANSIT_TO";
-    currentStopSequence?: number;
+    currentStatus: "STOPPED_AT" | "IN_TRANSIT_TO";
+    currentStopSequence: number;
     bearing: number;
     position: {
       latitude: number;
       longitude: number;
     };
-    timestamp: string;
+    timestamp: number;
     trip: {
       tripId: string;
-      routeId?: string;
-      directionId?: number;
+      routeId: string;
+      directionId: number;
     };
     vehicle: VehicleDescriptor;
   };
@@ -101,10 +102,3 @@ export type GtfsRtVehiclePosition = {
   };
   entity: VehiclePositionEntity[];
 };
-
-// ---
-
-type RequireAtLeastOne<T, Keys extends keyof T = keyof T> = Pick<T, Exclude<keyof T, Keys>> &
-  {
-    [K in Keys]-?: Required<Pick<T, K>> & Partial<Pick<T, Exclude<Keys, K>>>;
-  }[Keys];
