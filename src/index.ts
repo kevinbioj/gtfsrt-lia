@@ -190,6 +190,7 @@ async function fetchNextLine(lineRef: string) {
         })),
         timestamp: recordedAt,
         trip: {
+          scheduleRelationship: "SCHEDULED",
           tripId: guessedTrip.id,
           routeId: guessedTrip.route,
           directionId: guessedTrip.direction,
@@ -210,6 +211,7 @@ async function fetchNextLine(lineRef: string) {
         position: lambertToLatLong(monitoredVehicle.MonitoredVehicleJourney.VehicleLocation!.Coordinates),
         timestamp: recordedAt,
         trip: {
+          scheduleRelationship: "SCHEDULED",
           tripId: guessedTrip.id,
           routeId: guessedTrip.route,
           directionId: guessedTrip.direction,

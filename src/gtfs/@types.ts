@@ -41,6 +41,13 @@ export type StopTimeEvent = {
   time: number;
 };
 
+export type TripDescriptor = {
+  scheduleRelationship: "SCHEDULED";
+  tripId: string;
+  routeId: string;
+  directionId: number;
+};
+
 export type VehicleDescriptor = {
   id: string;
   label: string;
@@ -57,11 +64,7 @@ export type TripUpdateEntity = {
       stopSequence?: number;
     }>;
     timestamp: number;
-    trip: {
-      tripId: string;
-      routeId: string;
-      directionId: number;
-    };
+    trip: TripDescriptor;
     vehicle: VehicleDescriptor;
   };
 };
@@ -86,11 +89,7 @@ export type VehiclePositionEntity = {
       longitude: number;
     };
     timestamp: number;
-    trip: {
-      tripId: string;
-      routeId: string;
-      directionId: number;
-    };
+    trip: TripDescriptor;
     vehicle: VehicleDescriptor;
   };
 };
