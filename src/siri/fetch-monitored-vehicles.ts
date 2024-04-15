@@ -8,6 +8,7 @@ export type VehicleActivity = {
     LineRef: string;
     DirectionName: "A" | "R";
     DestinationRef: string;
+    DestinationName: string;
     Monitored: boolean;
     Delay: string;
     Bearing: number;
@@ -20,6 +21,7 @@ export type VehicleActivity = {
     MonitoredCall?: {
       Order: number;
       VehicleAtStop: boolean;
+      DestinationDisplay: string;
       StopPointRef: string;
       StopPointName: string;
       ArrivalStatus: string;

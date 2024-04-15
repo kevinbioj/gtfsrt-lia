@@ -3,7 +3,6 @@
   "siriEndpoint": "https://opendata.siri.transports-lia.fr/api",
   "siriRatelimit": 3,
   "requestorRef": "opendata",
-  "timeMatchingUncertainty": 120,
   "sweepThreshold": 600,
   "port": 40404
 }

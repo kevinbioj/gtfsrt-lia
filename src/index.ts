@@ -4,17 +4,9 @@ import { Hono } from "hono";
 import { stream } from "hono/streaming";
 import { match } from "ts-pattern";
 
-import {
-  gtfsResourceHref,
-  siriEndpoint,
-  requestorRef,
-  timeMatchingUncertainty,
-  siriRatelimit,
-  sweepThreshold,
-  port,
-} from "~/../config.json";
+import { gtfsResourceHref, siriEndpoint, requestorRef, siriRatelimit, sweepThreshold, port } from "~/../config.json";
 
-import type { TripUpdateEntity, VehiclePositionEntity } from "~/gtfs/@types";
+import type { StopTime, TripUpdateEntity, VehiclePositionEntity } from "~/gtfs/@types";
 import { downloadStaticResource } from "~/gtfs/download-resource";
 import { encodePayload } from "~/gtfs/encode-payload";
 import { wrapEntities } from "~/gtfs/wrap-entities";
@@ -124,44 +116,60 @@ async function fetchNextLine(lineRef: string) {
       typeof monitoredVehicle.MonitoredVehicleJourney.DirectionName === "string" &&
       typeof monitoredVehicle.MonitoredVehicleJourney.MonitoredCall !== "undefined" &&
       monitoredVehicle.MonitoredVehicleJourney.MonitoredCall.ArrivalStatus !== "noReport" &&
-      monitoredVehicle.MonitoredVehicleJourney.MonitoredCall.DepartureStatus !== "noReport"
+      monitoredVehicle.MonitoredVehicleJourney.MonitoredCall.DepartureStatus !== "noReport" &&
+      monitoredVehicle.MonitoredVehicleJourney.MonitoredCall.DestinationDisplay !== "SANS VOYAGEUR"
+  );
+
+  const guessableTrips = gtfsTrips.filter(
+    (trip) => checkCalendar(trip.calendar) && trip.route === parseSiriRef(lineRef)
   );
 
   for (const monitoredVehicle of monitoredVehicles) {
     const vehicleRef = parseSiriRef(monitoredVehicle.VehicleMonitoringRef);
     const recordedAt = dayjs(monitoredVehicle.RecordedAtTime).unix();
 
-    const routeId = parseSiriRef(monitoredVehicle.MonitoredVehicleJourney.LineRef);
     const directionId = match(monitoredVehicle.MonitoredVehicleJourney.DirectionName)
       .with("A", () => 0)
       .with("R", () => 1)
       .exhaustive();
 
     const monitoredCall = monitoredVehicle.MonitoredVehicleJourney.MonitoredCall!;
-    let monitoredStopTimeIdx = -1;
-    const guessedTrip = gtfsTrips.find(
-      (trip) =>
-        checkCalendar(trip.calendar) &&
-        trip.route === routeId &&
-        trip.direction === directionId &&
-        trip.stops.at(-1)?.stop.id === parseSiriRef(monitoredVehicle.MonitoredVehicleJourney.DestinationRef) &&
-        trip.stops.some((stopTime, index) => {
-          const stopId = parseSiriRef(monitoredCall.StopPointRef);
-          if (stopTime.sequence !== monitoredCall.Order && stopTime.stop.id !== stopId) return false;
-          const aimedTime =
-            monitoredCall.DepartureStatus !== "noReport"
-              ? monitoredCall.AimedDepartureTime
-              : monitoredCall.AimedArrivalTime;
-          const delay = dayjs(aimedTime).diff(parseTime(stopTime.time), "seconds");
-          if (Math.abs(delay) > timeMatchingUncertainty) return false;
-          monitoredStopTimeIdx = index;
-          return true;
-        })
+    const referenceTime = dayjs(
+      monitoredCall.DepartureStatus === "noReport" ? monitoredCall.AimedDepartureTime : monitoredCall.AimedArrivalTime
     );
-    if (typeof guessedTrip === "undefined") {
+
+    const findStopTime = (s: StopTime) =>
+      s.stop.id === parseSiriRef(monitoredCall.StopPointRef) || monitoredCall.StopPointName.includes(s.stop.name);
+
+    const guessedTrip = guessableTrips
+      .filter(
+        (trip) =>
+          trip.direction === directionId &&
+          (trip.stops.at(-1)?.stop.id === parseSiriRef(monitoredVehicle.MonitoredVehicleJourney.DestinationRef) ||
+            monitoredVehicle.MonitoredVehicleJourney.DestinationName.includes(trip.stops.at(-1)?.stop.name ?? "")) &&
+          trip.stops.some(
+            (s) =>
+              s.stop.id === parseSiriRef(monitoredCall.StopPointRef) ||
+              monitoredCall.StopPointName.includes(s.stop.name)
+          )
+      )
+      .sort((a, b) => {
+        const aStopTime = parseTime(a.stops.find(findStopTime)!.time);
+        const bStopTime = parseTime(b.stops.find(findStopTime)!.time);
+        return Math.abs(referenceTime.diff(aStopTime)) - Math.abs(referenceTime.diff(bStopTime));
+      })
+      .at(0);
+    if (
+      typeof guessedTrip === "undefined" ||
+      referenceTime.diff(guessedTrip.stops.find(findStopTime)?.time, "seconds") > 240
+    ) {
       console.warn(`Failed to guess trip for vehicle '${vehicleRef}', skipping.`);
       continue;
     }
+
+    const monitoredStopTimeIdx = guessedTrip.stops.findIndex(
+      (s) => s.stop.id === parseSiriRef(monitoredCall.StopPointRef) || s.stop.name === monitoredCall.StopPointName
+    );
 
     const tripRef = guessedTrip.id;
     const expectedTime =
