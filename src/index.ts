@@ -44,9 +44,13 @@ console.log("-- SIRI-VM TO GTFS --");
 console.log("Loading GTFS resource into memory.");
 let gtfsTrips = await downloadStaticResource(gtfsResourceHref);
 let gtfsTime = dayjs();
+let relevantLines = gtfsTrips.reduce((lines, trip) => {
+  lines.add(trip.route);
+  return lines;
+}, new Set<string>());
 
 console.log("Fetching monitored lines from SIRI service.");
-let monitoredLines = await fetchMonitoredLines(siriEndpoint);
+let monitoredLines = (await fetchMonitoredLines(siriEndpoint)).filter((line) => relevantLines.has(parseSiriRef(line)));
 let monitoredLinesTime = dayjs();
 
 let currentMonitoredLineIdx = 0;
@@ -61,6 +65,10 @@ async function fetchingLoop() {
       try {
         gtfsTrips = await downloadStaticResource(gtfsResourceHref);
         gtfsTime = dayjs();
+        relevantLines = gtfsTrips.reduce((lines, trip) => {
+          lines.add(trip.route);
+          return lines;
+        }, new Set<string>());
       } catch (e: unknown) {
         console.error(`Failed to update GTFS resource, using old one for now:`);
         console.error(e);
@@ -70,7 +78,9 @@ async function fetchingLoop() {
     if (dayjs().diff(monitoredLinesTime, "minutes") > 120) {
       console.log(`Updating monitored lines from SIRI service.`);
       try {
-        monitoredLines = await fetchMonitoredLines(siriEndpoint);
+        monitoredLines = (await fetchMonitoredLines(siriEndpoint)).filter((line) =>
+          relevantLines.has(parseSiriRef(line))
+        );
         monitoredLinesTime = dayjs();
         await sleep(siriRatelimit * 1000);
       } catch (e: unknown) {
