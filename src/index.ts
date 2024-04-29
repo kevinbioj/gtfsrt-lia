@@ -1,8 +1,8 @@
-import { sleep } from "bun";
 import dayjs from "dayjs";
 import { Hono } from "hono";
 import { stream } from "hono/streaming";
 import { match } from "ts-pattern";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { gtfsResourceHref, siriEndpoint, requestorRef, siriRatelimit, sweepThreshold, port } from "~/../config.json";
 

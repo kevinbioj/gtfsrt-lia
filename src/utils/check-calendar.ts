@@ -1,12 +1,12 @@
-import dayjs from 'dayjs';
+import dayjs from "dayjs";
 
-import { Calendar } from '~/yabs/fetcher/gtfs/@types';
+import type { Calendar } from "~/gtfs/@types";
 
 export function checkCalendar(calendar: Calendar) {
-  const now = dayjs().subtract(4, 'hours').subtract(30, 'minutes');
-  const nowDate = now.format('YYYYMMDD');
+  const now = dayjs().subtract(4, "hours").subtract(30, "minutes");
+  const nowDate = now.format("YYYYMMDD");
   // 1. If we are outside the operating period, we deny the calendar.
-  if (!now.isBetween(dayjs(calendar.from, 'YYYYMMDD'), dayjs(calendar.to, 'YYYYMMDD'), 'day', '[]')) return false;
+  if (!now.isBetween(dayjs(calendar.from, "YYYYMMDD"), dayjs(calendar.to, "YYYYMMDD"), "day", "[]")) return false;
   // 2. If the current date is whitelisted, we allow the calendar.
   if (calendar.whitelist.includes(nowDate)) return true;
   // 3. If the current date is blacklisted, we deny the calendar.

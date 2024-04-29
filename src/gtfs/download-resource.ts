@@ -1,4 +1,5 @@
 import { exec } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { groupBy } from "~/utils/group-by";
@@ -26,12 +27,10 @@ export async function downloadStaticResource(href: string) {
 // ---
 
 async function loadCalendars(resourcePath: string) {
-  const calendars = await Bun.file(join(resourcePath, "calendar.txt"))
-    .text()
+  const calendars = await readFile(join(resourcePath, "calendar.txt"))
     .then(parseCsv)
     .catch(() => []);
-  const calendarDates = await Bun.file(join(resourcePath, "calendar_dates.txt"))
-    .text()
+  const calendarDates = await readFile(join(resourcePath, "calendar_dates.txt"))
     .then(parseCsv)
     .catch(() => []);
   const calendarSet = calendars.reduce((calendars, calendar) => {
@@ -79,7 +78,7 @@ async function loadCalendars(resourcePath: string) {
 }
 
 async function loadStops(resourcePath: string) {
-  const stops = await Bun.file(join(resourcePath, "stops.txt")).text().then(parseCsv);
+  const stops = await readFile(join(resourcePath, "stops.txt")).then(parseCsv);
   return stops.reduce((stops, stop) => {
     stops.set(stop.stop_id, {
       id: stop.stop_id,
@@ -89,14 +88,10 @@ async function loadStops(resourcePath: string) {
   }, new Map<string, Stop>());
 }
 
-async function loadTrips(
-  resourcePath: string,
-  calendars: Map<string, Calendar>,
-  stops: Map<string, Stop>
-) {
-  const trips = await Bun.file(join(resourcePath, "trips.txt")).text().then(parseCsv);
+async function loadTrips(resourcePath: string, calendars: Map<string, Calendar>, stops: Map<string, Stop>) {
+  const trips = await readFile(join(resourcePath, "trips.txt")).then(parseCsv);
   const stopTimes = groupBy(
-    await Bun.file(join(resourcePath, "stop_times.txt")).text().then(parseCsv),
+    await readFile(join(resourcePath, "stop_times.txt")).then(parseCsv),
     (stopTime) => stopTime.trip_id
   );
   return trips.map(
