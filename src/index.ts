@@ -16,6 +16,7 @@ import { checkCalendar } from "~/utils/check-calendar";
 import { lambertToLatLong } from "~/utils/coordinates-converter";
 import { parseSiriRef } from "~/utils/parse-ref";
 import { parseTime } from "~/utils/parse-time";
+import { serve } from "@hono/node-server";
 
 const tripUpdates = new Map<string, TripUpdateEntity>();
 const vehiclePositions = new Map<string, VehiclePositionEntity>();
@@ -37,7 +38,6 @@ server.get("/vehicle-positions", (c) =>
 );
 server.get("/trip-updates.json", (c) => c.json(wrapEntities([...tripUpdates.values()])));
 server.get("/vehicle-positions.json", (c) => c.json(wrapEntities([...vehiclePositions.values()])));
-export default { fetch: server.fetch, port };
 
 console.log("-- SIRI-VM TO GTFS --");
 
@@ -268,3 +268,5 @@ function sweepEntries() {
     .forEach((vehiclePosition) => vehiclePositions.delete(vehiclePosition.id));
   setTimeout(sweepEntries, 60_000);
 }
+
+serve({ fetch: server.fetch, port });
