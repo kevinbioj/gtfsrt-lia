@@ -135,7 +135,7 @@ async function fetchNextLine(lineRef: string) {
   );
 
   for (const monitoredVehicle of monitoredVehicles) {
-    const vehicleRef = parseSiriRef(monitoredVehicle.VehicleMonitoringRef);
+    const vehicleRef = parseSiriRef(monitoredVehicle.VehicleMonitoringRef).padStart(3, "0");
     const recordedAt = dayjs(monitoredVehicle.RecordedAtTime).unix();
 
     const directionId = match(monitoredVehicle.MonitoredVehicleJourney.DirectionName)
