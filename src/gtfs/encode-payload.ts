@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { parse } from "protobufjs";
 import type { GtfsRtTripUpdate, GtfsRtVehiclePosition } from "~/gtfs/@types";
 

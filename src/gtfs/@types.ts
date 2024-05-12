@@ -83,10 +83,10 @@ export type VehiclePositionEntity = {
   vehicle: {
     currentStatus: "STOPPED_AT" | "IN_TRANSIT_TO";
     currentStopSequence: number;
-    bearing: number;
     position: {
       latitude: number;
       longitude: number;
+      bearing: number;
     };
     timestamp: number;
     trip: TripDescriptor;

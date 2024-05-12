@@ -223,11 +223,13 @@ async function fetchNextLine(lineRef: string) {
     vehiclePositions.set(vehicleRef, {
       id: vehicleRef,
       vehicle: {
-        bearing: monitoredVehicle.MonitoredVehicleJourney.Bearing,
         currentStatus: atStop ? "STOPPED_AT" : "IN_TRANSIT_TO",
         currentStopSequence: nextStopTimes[0].sequence,
-        position: lambertToLatLong(monitoredVehicle.MonitoredVehicleJourney.VehicleLocation!.Coordinates),
         timestamp: recordedAt,
+        position: {
+          ...lambertToLatLong(monitoredVehicle.MonitoredVehicleJourney.VehicleLocation!.Coordinates),
+          bearing: monitoredVehicle.MonitoredVehicleJourney.Bearing,
+        },
         trip: {
           scheduleRelationship: "SCHEDULED",
           tripId: guessedTrip.id,
