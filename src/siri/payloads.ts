@@ -7,7 +7,7 @@ export const LINES_DISCOVERY = (requestorRef: string) =>
         <Request>
           <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
           <siri:RequestorRef>${requestorRef}</siri:RequestorRef>
-          <siri:MessageIdentifier>Test::Message::${randomUUID()}</siri:MessageIdentifier>
+          <siri:MessageIdentifier>BUS-TRACKER.FR::Message::${randomUUID()}</siri:MessageIdentifier>
         </Request>
         <RequestExtension/>
       </sw:LinesDiscovery>
@@ -16,7 +16,7 @@ export const LINES_DISCOVERY = (requestorRef: string) =>
 
 export const GET_VEHICLE_MONITORING = (requestorRef: string, lineRef: string) => {
   const requestTimestamp = new Date().toISOString();
-  const messageIdentifier = `Test::Message::${randomUUID()}`;
+  const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
   return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
         <sw:GetVehicleMonitoring xmlns:sw="http://wsdl.siri.org.uk" xmlns:siri="http://www.siri.org.uk/siri">

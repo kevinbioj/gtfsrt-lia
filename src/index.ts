@@ -133,6 +133,7 @@ async function fetchNextLine(lineRef: string) {
   const guessableTrips = gtfsTrips.filter(
     (trip) => checkCalendar(trip.calendar) && trip.route === parseSiriRef(lineRef)
   );
+  const processedTrips = new Set<string>();
 
   for (const monitoredVehicle of monitoredVehicles) {
     const vehicleRef = parseSiriRef(monitoredVehicle.VehicleMonitoringRef).padStart(3, "0");
@@ -154,6 +155,7 @@ async function fetchNextLine(lineRef: string) {
     const guessedTrip = guessableTrips
       .filter(
         (trip) =>
+          // !processedTrips.has(trip.id) && // Until bug is fixed
           trip.direction === directionId &&
           (trip.stops.at(-1)?.stop.id === parseSiriRef(monitoredVehicle.MonitoredVehicleJourney.DestinationRef) ||
             monitoredVehicle.MonitoredVehicleJourney.DestinationName.includes(trip.stops.at(-1)?.stop.name ?? "")) &&
@@ -171,12 +173,13 @@ async function fetchNextLine(lineRef: string) {
       .at(0);
     if (
       typeof guessedTrip === "undefined" ||
-      referenceTime.diff(guessedTrip.stops.find(findStopTime)?.time, "seconds") > 240
+      referenceTime.diff(guessedTrip.stops.find(findStopTime)?.time, "seconds") > 120
     ) {
       console.warn(`Failed to guess trip for vehicle '${vehicleRef}', skipping.`);
       continue;
     }
 
+    processedTrips.add(guessedTrip.id);
     const monitoredStopTimeIdx = guessedTrip.stops.findIndex(
       (s) => s.stop.id === parseSiriRef(monitoredCall.StopPointRef) || s.stop.name === monitoredCall.StopPointName
     );
@@ -194,9 +197,6 @@ async function fetchNextLine(lineRef: string) {
       id: tripRef,
       tripUpdate: {
         stopTimeUpdate: nextStopTimes.map((stopTime) => ({
-          stopId: stopTime.stop.id,
-          stopSequence: stopTime.sequence,
-          scheduleRelationship: "SCHEDULED",
           arrival: {
             delay,
             time: parseTime(stopTime.time).add(delay, "seconds").unix(),
@@ -205,13 +205,16 @@ async function fetchNextLine(lineRef: string) {
             delay,
             time: parseTime(stopTime.time).add(delay, "seconds").unix(),
           },
+          stopId: stopTime.stop.id,
+          stopSequence: stopTime.sequence,
+          scheduleRelationship: "SCHEDULED",
         })),
         timestamp: recordedAt,
         trip: {
-          scheduleRelationship: "SCHEDULED",
-          tripId: guessedTrip.id,
           routeId: guessedTrip.route,
           directionId: guessedTrip.direction,
+          tripId: guessedTrip.id,
+          scheduleRelationship: "SCHEDULED",
         },
         vehicle: {
           id: vehicleRef,
@@ -225,16 +228,17 @@ async function fetchNextLine(lineRef: string) {
       vehicle: {
         currentStatus: atStop ? "STOPPED_AT" : "IN_TRANSIT_TO",
         currentStopSequence: nextStopTimes[0].sequence,
-        timestamp: recordedAt,
         position: {
           ...lambertToLatLong(monitoredVehicle.MonitoredVehicleJourney.VehicleLocation!.Coordinates),
           bearing: monitoredVehicle.MonitoredVehicleJourney.Bearing,
         },
+        stopId: nextStopTimes[0].stop.id,
+        timestamp: recordedAt,
         trip: {
-          scheduleRelationship: "SCHEDULED",
-          tripId: guessedTrip.id,
           routeId: guessedTrip.route,
           directionId: guessedTrip.direction,
+          tripId: guessedTrip.id,
+          scheduleRelationship: "SCHEDULED",
         },
         vehicle: {
           id: vehicleRef,
