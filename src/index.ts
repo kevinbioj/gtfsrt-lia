@@ -120,7 +120,7 @@ async function fetchNextLine(lineRef: string) {
 
   const monitoredVehicles = (await fetchMonitoredVehicles(siriEndpoint, requestorRef, lineRef)).filter(
     (monitoredVehicle) =>
-      monitoredVehicle.MonitoredVehicleJourney.Monitored &&
+      // monitoredVehicle.MonitoredVehicleJourney.Monitored &&
       typeof monitoredVehicle.MonitoredVehicleJourney.FramedVehicleJourneyRef?.DatedVehicleJourneyRef === "string" &&
       typeof monitoredVehicle.MonitoredVehicleJourney.LineRef === "string" &&
       typeof monitoredVehicle.MonitoredVehicleJourney.DirectionName === "string" &&
