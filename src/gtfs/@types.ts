@@ -81,16 +81,16 @@ export type GtfsRtTripUpdate = {
 export type VehiclePositionEntity = {
   id: string;
   vehicle: {
-    currentStatus: "STOPPED_AT" | "IN_TRANSIT_TO";
-    currentStopSequence: number;
+    currentStatus?: "STOPPED_AT" | "IN_TRANSIT_TO";
+    currentStopSequence?: number;
     position: {
       latitude: number;
       longitude: number;
       bearing: number;
     };
-    stopId: string;
+    stopId?: string;
     timestamp: number;
-    trip: TripDescriptor;
+    trip?: TripDescriptor;
     vehicle: VehicleDescriptor;
   };
 };

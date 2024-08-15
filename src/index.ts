@@ -6,7 +6,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { gtfsResourceHref, siriEndpoint, requestorRef, siriRatelimit, sweepThreshold, port } from "~/../config.json";
 
-import type { StopTime, TripUpdateEntity, VehiclePositionEntity } from "~/gtfs/@types";
+import type { StopTime, Trip, TripUpdateEntity, VehiclePositionEntity } from "~/gtfs/@types";
 import { downloadStaticResource } from "~/gtfs/download-resource";
 import { encodePayload } from "~/gtfs/encode-payload";
 import { wrapEntities } from "~/gtfs/wrap-entities";
@@ -139,107 +139,115 @@ async function fetchNextLine(lineRef: string) {
     const vehicleRef = parseSiriRef(monitoredVehicle.VehicleMonitoringRef).padStart(3, "0");
     const recordedAt = dayjs(monitoredVehicle.RecordedAtTime).unix();
 
-    const directionId = match(monitoredVehicle.MonitoredVehicleJourney.DirectionName)
-      .with("A", () => 0)
-      .with("R", () => 1)
-      .exhaustive();
+    let guessedTrip: Trip | undefined = undefined;
+    let atStop: boolean | undefined = undefined;
+    let nextStopTimes: StopTime[] | undefined = undefined;
 
-    const monitoredCall = monitoredVehicle.MonitoredVehicleJourney.MonitoredCall!;
-    const referenceTime = dayjs(
-      monitoredCall.DepartureStatus === "noReport" ? monitoredCall.AimedDepartureTime : monitoredCall.AimedArrivalTime
-    );
+    if (monitoredVehicle.MonitoredVehicleJourney.DestinationName !== "SANS VOYAGEUR") {
+      const directionId = match(monitoredVehicle.MonitoredVehicleJourney.DirectionName)
+        .with("A", () => 0)
+        .with("R", () => 1)
+        .exhaustive();
 
-    const findStopTime = (s: StopTime) =>
-      s.stop.id === parseSiriRef(monitoredCall.StopPointRef) || monitoredCall.StopPointName.includes(s.stop.name);
+      const monitoredCall = monitoredVehicle.MonitoredVehicleJourney.MonitoredCall!;
+      const referenceTime = dayjs(
+        monitoredCall.DepartureStatus === "noReport" ? monitoredCall.AimedDepartureTime : monitoredCall.AimedArrivalTime
+      );
 
-    const guessedTrip = guessableTrips
-      .filter(
-        (trip) =>
-          // !processedTrips.has(trip.id) && // Until bug is fixed
-          trip.direction === directionId &&
-          (trip.stops.at(-1)?.stop.id === parseSiriRef(monitoredVehicle.MonitoredVehicleJourney.DestinationRef) ||
-            monitoredVehicle.MonitoredVehicleJourney.DestinationName.includes(trip.stops.at(-1)?.stop.name ?? "")) &&
-          trip.stops.some(
-            (s) =>
-              s.stop.id === parseSiriRef(monitoredCall.StopPointRef) ||
-              monitoredCall.StopPointName.includes(s.stop.name)
-          )
-      )
-      .sort((a, b) => {
-        const aStopTime = parseTime(a.stops.find(findStopTime)!.time);
-        const bStopTime = parseTime(b.stops.find(findStopTime)!.time);
-        return Math.abs(referenceTime.diff(aStopTime)) - Math.abs(referenceTime.diff(bStopTime));
-      })
-      .at(0);
-    if (
-      typeof guessedTrip === "undefined" ||
-      referenceTime.diff(guessedTrip.stops.find(findStopTime)?.time, "seconds") > 120
-    ) {
-      console.warn(`Failed to guess trip for vehicle '${vehicleRef}', skipping.`);
-      continue;
+      const findStopTime = (s: StopTime) =>
+        s.stop.id === parseSiriRef(monitoredCall.StopPointRef) || monitoredCall.StopPointName.includes(s.stop.name);
+
+      guessedTrip = guessableTrips
+        .filter(
+          (trip) =>
+            // !processedTrips.has(trip.id) && // Until bug is fixed
+            trip.direction === directionId &&
+            (trip.stops.at(-1)?.stop.id === parseSiriRef(monitoredVehicle.MonitoredVehicleJourney.DestinationRef) ||
+              monitoredVehicle.MonitoredVehicleJourney.DestinationName.includes(trip.stops.at(-1)?.stop.name ?? "")) &&
+            trip.stops.some(
+              (s) =>
+                s.stop.id === parseSiriRef(monitoredCall.StopPointRef) ||
+                monitoredCall.StopPointName.includes(s.stop.name)
+            )
+        )
+        .sort((a, b) => {
+          const aStopTime = parseTime(a.stops.find(findStopTime)!.time);
+          const bStopTime = parseTime(b.stops.find(findStopTime)!.time);
+          return Math.abs(referenceTime.diff(aStopTime)) - Math.abs(referenceTime.diff(bStopTime));
+        })
+        .at(0);
+      if (
+        typeof guessedTrip === "undefined" ||
+        referenceTime.diff(guessedTrip.stops.find(findStopTime)?.time, "seconds") > 120
+      ) {
+        console.warn(`Failed to guess trip for vehicle '${vehicleRef}', skipping.`);
+        continue;
+      }
+
+      processedTrips.add(guessedTrip.id);
+      const monitoredStopTimeIdx = guessedTrip.stops.findIndex(
+        (s) => s.stop.id === parseSiriRef(monitoredCall.StopPointRef) || s.stop.name === monitoredCall.StopPointName
+      );
+
+      const tripRef = guessedTrip.id;
+      const expectedTime =
+        monitoredCall.DepartureStatus !== "noReport"
+          ? monitoredCall.ExpectedDepartureTime
+          : monitoredCall.ExpectedArrivalTime;
+      atStop = monitoredCall.VehicleAtStop || dayjs().isBefore(dayjs(expectedTime));
+      nextStopTimes = guessedTrip.stops.slice(monitoredStopTimeIdx + (atStop ? 0 : 1));
+      const delay = dayjs(expectedTime).diff(parseTime(guessedTrip.stops[monitoredStopTimeIdx].time), "seconds");
+
+      tripUpdates.set(tripRef, {
+        id: `SM:${tripRef}`,
+        tripUpdate: {
+          stopTimeUpdate: nextStopTimes.map((stopTime) => ({
+            arrival: {
+              delay,
+              time: parseTime(stopTime.time).add(delay, "seconds").unix(),
+            },
+            departure: {
+              delay,
+              time: parseTime(stopTime.time).add(delay, "seconds").unix(),
+            },
+            stopId: stopTime.stop.id,
+            stopSequence: stopTime.sequence,
+            scheduleRelationship: "SCHEDULED",
+          })),
+          timestamp: recordedAt,
+          trip: {
+            routeId: guessedTrip.route,
+            directionId: guessedTrip.direction,
+            tripId: guessedTrip.id,
+            scheduleRelationship: "SCHEDULED",
+          },
+          vehicle: {
+            id: vehicleRef,
+            label: vehicleRef,
+          },
+        },
+      });
     }
 
-    processedTrips.add(guessedTrip.id);
-    const monitoredStopTimeIdx = guessedTrip.stops.findIndex(
-      (s) => s.stop.id === parseSiriRef(monitoredCall.StopPointRef) || s.stop.name === monitoredCall.StopPointName
-    );
-
-    const tripRef = guessedTrip.id;
-    const expectedTime =
-      monitoredCall.DepartureStatus !== "noReport"
-        ? monitoredCall.ExpectedDepartureTime
-        : monitoredCall.ExpectedArrivalTime;
-    const atStop = monitoredCall.VehicleAtStop || dayjs().isBefore(dayjs(expectedTime));
-    const nextStopTimes = guessedTrip.stops.slice(monitoredStopTimeIdx + (atStop ? 0 : 1));
-    const delay = dayjs(expectedTime).diff(parseTime(guessedTrip.stops[monitoredStopTimeIdx].time), "seconds");
-
-    tripUpdates.set(tripRef, {
-      id: tripRef,
-      tripUpdate: {
-        stopTimeUpdate: nextStopTimes.map((stopTime) => ({
-          arrival: {
-            delay,
-            time: parseTime(stopTime.time).add(delay, "seconds").unix(),
-          },
-          departure: {
-            delay,
-            time: parseTime(stopTime.time).add(delay, "seconds").unix(),
-          },
-          stopId: stopTime.stop.id,
-          stopSequence: stopTime.sequence,
-          scheduleRelationship: "SCHEDULED",
-        })),
-        timestamp: recordedAt,
-        trip: {
-          routeId: guessedTrip.route,
-          directionId: guessedTrip.direction,
-          tripId: guessedTrip.id,
-          scheduleRelationship: "SCHEDULED",
-        },
-        vehicle: {
-          id: vehicleRef,
-          label: vehicleRef,
-        },
-      },
-    });
-
     vehiclePositions.set(vehicleRef, {
-      id: vehicleRef,
+      id: `VM:${vehicleRef}`,
       vehicle: {
-        currentStatus: atStop ? "STOPPED_AT" : "IN_TRANSIT_TO",
-        currentStopSequence: nextStopTimes[0].sequence,
+        currentStatus: typeof atStop === "boolean" ? (atStop ? "STOPPED_AT" : "IN_TRANSIT_TO") : undefined,
+        currentStopSequence: nextStopTimes?.[0].sequence,
         position: {
           ...lambertToLatLong(monitoredVehicle.MonitoredVehicleJourney.VehicleLocation!.Coordinates),
           bearing: monitoredVehicle.MonitoredVehicleJourney.Bearing,
         },
-        stopId: nextStopTimes[0].stop.id,
+        stopId: nextStopTimes?.[0].stop.id,
         timestamp: recordedAt,
-        trip: {
-          routeId: guessedTrip.route,
-          directionId: guessedTrip.direction,
-          tripId: guessedTrip.id,
-          scheduleRelationship: "SCHEDULED",
-        },
+        trip: guessedTrip
+          ? {
+              routeId: guessedTrip.route,
+              directionId: guessedTrip.direction,
+              tripId: guessedTrip.id,
+              scheduleRelationship: "SCHEDULED",
+            }
+          : undefined,
         vehicle: {
           id: vehicleRef,
           label: vehicleRef,
@@ -266,9 +274,11 @@ function sweepEntries() {
     .forEach((tripUpdate) => tripUpdates.delete(tripUpdate.id));
   [...vehiclePositions.values()]
     .filter((vehiclePosition) => {
-      const associatedTrip = tripUpdates.get(vehiclePosition.vehicle.trip.tripId);
-      if (dayjs().isBefore(dayjs.unix(associatedTrip?.tripUpdate.stopTimeUpdate.at(-1)?.arrival.time ?? 0)))
-        return false;
+      if (vehiclePosition.vehicle.trip) {
+        const associatedTrip = tripUpdates.get(vehiclePosition.vehicle.trip.tripId);
+        if (dayjs().isBefore(dayjs.unix(associatedTrip?.tripUpdate.stopTimeUpdate.at(-1)?.arrival.time ?? 0)))
+          return false;
+      }
       return dayjs().diff(dayjs.unix(vehiclePosition.vehicle.timestamp), "seconds") > sweepThreshold;
     })
     .forEach((vehiclePosition) => vehiclePositions.delete(vehiclePosition.id));
