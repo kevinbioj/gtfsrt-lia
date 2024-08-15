@@ -143,7 +143,7 @@ async function fetchNextLine(lineRef: string) {
     let atStop: boolean | undefined = undefined;
     let nextStopTimes: StopTime[] | undefined = undefined;
 
-    if (monitoredVehicle.MonitoredVehicleJourney.DestinationName !== "SANS VOYAGEUR") {
+    if (monitoredVehicle.MonitoredVehicleJourney.MonitoredCall?.DestinationDisplay !== "SANS VOYAGEUR") {
       const directionId = match(monitoredVehicle.MonitoredVehicleJourney.DirectionName)
         .with("A", () => 0)
         .with("R", () => 1)
