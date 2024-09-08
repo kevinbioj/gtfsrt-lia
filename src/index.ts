@@ -177,8 +177,8 @@ async function fetchNextLine(lineRef: string) {
         })
         .at(0);
       if (
-        typeof guessedTrip === "undefined" ||
-        referenceTime.diff(guessedTrip.stops.find(findStopTime)?.time, "seconds") > 120
+        typeof guessedTrip === "undefined" /*||
+        referenceTime.diff(guessedTrip.stops.find(findStopTime)?.time, "seconds") > 120*/
       ) {
         console.warn(`Failed to guess trip for vehicle '${vehicleRef}', skipping.`);
         continue;
