@@ -1,7 +1,7 @@
 {
   "gtfsResourceHref": "https://www.data.gouv.fr/fr/datasets/r/1e666e24-58ee-46b9-8952-ea2755ba88f2",
   "siriEndpoint": "https://opendata.siri.transports-lia.fr/api",
-  "siriRatelimit": 3,
+  "siriRatelimit": 1,
   "requestorRef": "opendata",
   "sweepThreshold": 600,
   "port": 40404

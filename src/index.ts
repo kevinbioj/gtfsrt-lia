@@ -271,7 +271,7 @@ function sweepEntries() {
       const theoricalTime = dayjs.unix(lastStop.arrival.time).subtract(lastStop.arrival.delay, "seconds");
       return dayjs().diff(theoricalTime, "seconds") > sweepThreshold;
     })
-    .forEach((tripUpdate) => tripUpdates.delete(tripUpdate.id));
+    .forEach((tripUpdate) => tripUpdates.delete(tripUpdate.tripUpdate.trip.tripId));
   [...vehiclePositions.values()]
     .filter((vehiclePosition) => {
       if (vehiclePosition.vehicle.trip) {
@@ -281,7 +281,7 @@ function sweepEntries() {
       }
       return dayjs().diff(dayjs.unix(vehiclePosition.vehicle.timestamp), "seconds") > sweepThreshold;
     })
-    .forEach((vehiclePosition) => vehiclePositions.delete(vehiclePosition.id));
+    .forEach((vehiclePosition) => vehiclePositions.delete(vehiclePosition.vehicle.vehicle.id));
   setTimeout(sweepEntries, 60_000);
 }
 
