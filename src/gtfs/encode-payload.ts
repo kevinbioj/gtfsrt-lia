@@ -1,5 +1,6 @@
-import { parse } from "protobufjs";
-import type { GtfsRtTripUpdate, GtfsRtVehiclePosition } from "~/gtfs/@types";
+import protobufjs from "protobufjs";
+
+import type { GtfsRtTripUpdate, GtfsRtVehiclePosition } from "./@types.js";
 
 const proto = `
 // Copyright 2015 The GTFS Specifications Authors.
@@ -642,8 +643,10 @@ message TranslatedString {
 }
 `;
 
-const type = parse(proto).root.lookupType("transit_realtime.FeedMessage");
+const type = protobufjs.parse(proto).root.lookupType("transit_realtime.FeedMessage");
 
-export function encodePayload(payload: GtfsRtTripUpdate | GtfsRtVehiclePosition) {
-  return type.encode(payload).finish();
+export function encodePayload(
+	payload: GtfsRtTripUpdate | GtfsRtVehiclePosition,
+) {
+	return type.encode(payload).finish();
 }
