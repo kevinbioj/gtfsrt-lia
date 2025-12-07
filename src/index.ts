@@ -160,9 +160,7 @@ async function fetchNextLine(lineRef: string) {
 			monitoredVehicle.MonitoredVehicleJourney.MonitoredCall.ArrivalStatus !==
 				"noReport" &&
 			monitoredVehicle.MonitoredVehicleJourney.MonitoredCall.DepartureStatus !==
-				"noReport" &&
-			monitoredVehicle.MonitoredVehicleJourney.MonitoredCall
-				.DestinationDisplay !== "SANS VOYAGEUR",
+				"noReport",
 	);
 
 	const guessableTrips = gtfsTrips.filter(
@@ -323,7 +321,10 @@ async function fetchNextLine(lineRef: string) {
 					: undefined,
 				vehicle: {
 					id: vehicleRef,
-					label: vehicleRef,
+					label:
+						monitoredVehicle.MonitoredVehicleJourney.MonitoredCall
+							.DestinationDisplay ??
+						monitoredVehicle.MonitoredVehicleJourney.DestinationName,
 				},
 			},
 		});
