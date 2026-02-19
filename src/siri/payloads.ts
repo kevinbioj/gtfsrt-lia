@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { Temporal } from "temporal-polyfill";
 
 export const LINES_DISCOVERY = (requestorRef: string) =>
-  `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+	`<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
     <S:Body>
       <sw:LinesDiscovery xmlns:sw="http://wsdl.siri.org.uk" xmlns:siri="http://www.siri.org.uk/siri">
         <Request>
@@ -15,9 +16,9 @@ export const LINES_DISCOVERY = (requestorRef: string) =>
   </S:Envelope>`;
 
 export const GET_VEHICLE_MONITORING = (requestorRef: string, lineRef: string) => {
-  const requestTimestamp = new Date().toISOString();
-  const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
-  return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
+	const requestTimestamp = Temporal.Now.instant().toString();
+	const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
+	return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
         <sw:GetVehicleMonitoring xmlns:sw="http://wsdl.siri.org.uk" xmlns:siri="http://www.siri.org.uk/siri">
           <ServiceRequestInfo>
