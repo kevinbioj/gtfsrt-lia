@@ -4,6 +4,8 @@ import type { Service } from "../gtfs/import-resource.js";
 
 const cache = new Map<string, { date: Temporal.PlainDate; operating: boolean }>();
 
+export const resetServiceOperationCache = () => cache.clear();
+
 export function isServiceOperatingOn(service: Service, date: Temporal.PlainDate) {
 	const cached = cache.get(service.id);
 	if (cached?.date.equals(date)) {

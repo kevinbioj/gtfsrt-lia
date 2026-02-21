@@ -5,6 +5,7 @@ import { Cron } from "croner";
 import { Temporal } from "temporal-polyfill";
 
 import { getOperatingTripsByLineAndDirection } from "../utils/get-operating-trips.js";
+import { resetServiceOperationCache } from "../utils/is-service-operating-on.js";
 
 import { downloadResource } from "./download-resource.js";
 import { importResource } from "./import-resource.js";
@@ -73,6 +74,7 @@ async function loadResource(resourceUrl: string) {
 	try {
 		const { lastModified } = await downloadResource(resourceUrl, workingDirectory);
 		const resource = await importResource(workingDirectory);
+		resetServiceOperationCache();
 		console.log("✓ Successfully loaded resource!");
 		return { resource, lastModified };
 	} catch (cause) {

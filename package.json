@@ -3,6 +3,7 @@
 	"description": "GTFS-RT data producer for LiA (Le Havre, France)",
 	"version": "0.1.0",
 	"author": "Kevin BIOJOUT <biojoutk1106@gmail.com>",
+	"license": "MIT",
 	"main": "dist/index.js",
 	"type": "module",
 	"scripts": {
