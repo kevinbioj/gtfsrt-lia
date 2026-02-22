@@ -58,6 +58,7 @@ export async function useGtfsResource(resourceUrl: string) {
 				const newResource = await loadResource(resourceUrl);
 				resource.gtfs = newResource.resource;
 				resource.lastModified = newResource.lastModified;
+				resource.operatingTripsByLineDirection = getOperatingTripsByLineAndDirection(resource.gtfs);
 				resource.importedAt = Temporal.Now.instant();
 			} catch (cause) {
 				console.error(`✘ GTFS update routine failed:`, cause);
