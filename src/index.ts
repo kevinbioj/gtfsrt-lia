@@ -162,7 +162,7 @@ while (true) {
 			monitoredStopTimeIndex !== undefined &&
 			monitoredStopTimeIndex >= 0
 		) {
-			const delay = Temporal.Duration.from(vehicle.MonitoredVehicleJourney.Delay);
+			const delay = Temporal.Instant.from(monitoredCall.ExpectedDepartureTime).since(monitoredCall.AimedDepartureTime);
 
 			store.tripUpdates.set(`ET:${trip.id}`, {
 				stopTimeUpdate: trip.stopTimes.slice(monitoredStopTimeIndex).map((stopTime, index, stopTimes) => {
@@ -187,7 +187,6 @@ while (true) {
 				}),
 				timestamp: Math.floor(recordedAt.epochMilliseconds / 1000),
 				trip: tripDescriptor,
-				vehicle: vehicleDescriptor,
 			});
 		}
 

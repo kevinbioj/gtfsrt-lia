@@ -5,5 +5,7 @@ export const PORT = 3000;
 export const REFRESH_INTERVAL = Temporal.Duration.from({ minutes: 10 }).total("milliseconds");
 export const REQUESTOR_REF = "opendata";
 export const SIRI_ENDPOINT = "https://opendata.siri.transports-lia.fr/api?wsdl";
-export const SIRI_RATELIMIT = Temporal.Duration.from({ seconds: 1 }).total("milliseconds");
+export const SIRI_RATELIMIT = Temporal.Duration.from({ seconds: process.env.NODE_ENV === "production" ? 1 : 10 }).total(
+	"milliseconds",
+);
 export const SWEEP_THRESHOLD = Temporal.Duration.from({ minutes: 10 }).total("milliseconds");
