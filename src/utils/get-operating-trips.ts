@@ -8,8 +8,6 @@ export function getOperatingTripsByLineAndDirection(gtfs: GtfsResource) {
 	const now = Temporal.Now.zonedDateTimeISO("Europe/Paris");
 	const today = now.toPlainDate().subtract({ days: now.hour < 3 ? 1 : 0 });
 
-	console.log("Computing trips for " + today.toString());
-
 	const tripsByLineAndDirection = new Map<string, Trip[]>();
 
 	for (const trip of gtfs.trips.values()) {

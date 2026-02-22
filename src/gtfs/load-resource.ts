@@ -44,10 +44,12 @@ export async function useGtfsResource(resourceUrl: string) {
 
 			if (!response.ok) {
 				console.warn("   Unable to fetch GTFS staleness data, aborting.");
+				return;
 			}
 
 			if (response.headers.get("last-modified") === resource.lastModified) {
 				console.log("   GTFS resource is up-to-date.");
+				return;
 			}
 
 			console.log("     GTFS resource is stale: updating.");
