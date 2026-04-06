@@ -18,7 +18,7 @@ FROM dependencies_base AS builder
 
 RUN pnpm install --frozen-lockfile
 
-COPY ./src/ ./
+COPY ./src/ ./src/
 COPY tsconfig.json ./
 RUN pnpm build
 
