@@ -27,7 +27,7 @@ hono.use(
 	rateLimiter({
 		windowMs: 10_000,
 		limit: 1,
-		keyGenerator: (c) => `${c.req.header("CF-Connecting-IP")}_${c.req.path}`,
+		keyGenerator: (c) => `${c.req.header("CF-Connecting-IP")}_${c.req.method}_${c.req.path}`,
 		handler: (c) => c.json({ code: 429, message: "Too many requests, please try again later." }, 429),
 	}),
 );
