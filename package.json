@@ -8,8 +8,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "tsx src/index.ts",
-		"lint": "biome lint",
-		"format": "biome format --write",
+		"check": "biome check",
+		"check:fix": "biome check --fix",
 		"build": "tsc",
 		"start": "node dist/index.js"
 	},
