@@ -31,6 +31,7 @@ export function processVehicleActivity(
 	const monitoredCallStopId = extractSiriRef(monitoredCall.StopPointRef)[3];
 	let trip: Trip | undefined;
 	let exactMatch = true;
+	let directMatch = false;
 
 	const monitoredCallAimedArrival = Temporal.Instant.from(monitoredCall.AimedArrivalTime)
 		.toZonedDateTimeISO("Europe/Paris")
@@ -39,7 +40,15 @@ export function processVehicleActivity(
 		.toZonedDateTimeISO("Europe/Paris")
 		.toPlainTime();
 
-	if (isCommercial) {
+	const saeivCourseId = extractSiriRef(
+		vehicle.MonitoredVehicleJourney.FramedVehicleJourneyRef?.DatedVehicleJourneyRef,
+	)[3];
+	if (saeivCourseId) {
+		trip = gtfsResource.tripsBySaeivCourse.get(saeivCourseId);
+		if (trip) directMatch = true;
+	}
+
+	if (isCommercial && trip === undefined) {
 		const relevantTrips = gtfsResource.operatingTripsByLineDirection.get(`${lineId}:${directionId}`);
 
 		trip = relevantTrips?.find((trip) =>
@@ -119,6 +128,6 @@ export function processVehicleActivity(
 	});
 
 	console.log(
-		` 	${vehicleRef}\t${lineId}\t${vehicle.MonitoredVehicleJourney.DirectionName} > ${extractSiriRef(vehicle.MonitoredVehicleJourney.DestinationRef)[3]} @ ${extractSiriRef(vehicle.MonitoredVehicleJourney.MonitoredCall.StopPointRef)[3]} ${trip ? (exactMatch ? "✓" : "~") : "✘"} (#${monitoredStopTime?.sequence ?? "?"} - atStop: ${atStop} - atTerminus: ${atTerminus})`,
+		` 	${vehicleRef}\t${lineId}\t${vehicle.MonitoredVehicleJourney.DirectionName} > ${extractSiriRef(vehicle.MonitoredVehicleJourney.DestinationRef)[3]} @ ${extractSiriRef(vehicle.MonitoredVehicleJourney.MonitoredCall.StopPointRef)[3]} ${trip ? (directMatch ? "=" : exactMatch ? "✓" : "~") : "✘"} (#${monitoredStopTime?.sequence ?? "?"} - atStop: ${atStop} - atTerminus: ${atTerminus})`,
 	);
 }

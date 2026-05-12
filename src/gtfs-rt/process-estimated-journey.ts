@@ -20,7 +20,16 @@ function isCancelled(value: boolean | string | undefined): boolean {
 	return value === true || value === "true";
 }
 
-function findTrip(journey: EstimatedVehicleJourney, gtfsResource: GtfsLiveResource): Trip | undefined {
+function findTrip(
+	journey: EstimatedVehicleJourney,
+	gtfsResource: GtfsLiveResource,
+): { trip: Trip; direct: boolean } | undefined {
+	const saeivCourseId = extractSiriRef(journey.FramedVehicleJourneyRef?.DatedVehicleJourneyRef)[3];
+	if (saeivCourseId) {
+		const direct = gtfsResource.tripsBySaeivCourse.get(saeivCourseId);
+		if (direct) return { trip: direct, direct: true };
+	}
+
 	const lineId = extractSiriRef(journey.LineRef)[3];
 	const estimatedCalls = toArray(journey.EstimatedCalls?.EstimatedCall);
 	const recordedCalls = toArray(journey.RecordedCalls?.RecordedCall);
@@ -42,9 +51,9 @@ function findTrip(journey: EstimatedVehicleJourney, gtfsResource: GtfsLiveResour
 	const exact = candidates.find(
 		(trip) => trip.stopTimes[0]?.stop.id === originStopId && trip.stopTimes[0]?.time.equals(originAimedTime),
 	);
-	if (exact) return exact;
+	if (exact) return { trip: exact, direct: false };
 
-	return candidates
+	const fallback = candidates
 		.filter((trip) => trip.stopTimes[0]?.stop.id === originStopId)
 		.toSorted((a, b) =>
 			Temporal.Duration.compare(
@@ -53,6 +62,8 @@ function findTrip(journey: EstimatedVehicleJourney, gtfsResource: GtfsLiveResour
 			),
 		)
 		.at(0);
+
+	return fallback ? { trip: fallback, direct: false } : undefined;
 }
 
 function epochSeconds(iso: string): number {
@@ -69,8 +80,9 @@ export function processEstimatedJourney(
 	gtfsResource: GtfsLiveResource,
 	store: RealtimeStore,
 ): void {
-	const trip = findTrip(journey, gtfsResource);
-	if (!trip) return;
+	const match = findTrip(journey, gtfsResource);
+	if (!match) return;
+	const { trip, direct: directMatch } = match;
 
 	const lineId = extractSiriRef(journey.LineRef)[3];
 	const callsByStopId = new Map<string, EstimatedCall>();
@@ -145,6 +157,6 @@ export function processEstimatedJourney(
 	});
 
 	console.log(
-		` 	ET\t${lineId}\t${trip.id}\t${stopTimeUpdates.length} stop(s)${journeyCancelled ? " [CANCELED]" : ""}`,
+		` 	ET\t${lineId}\t${trip.id} ${directMatch ? "=" : "✓"}\t${stopTimeUpdates.length} stop(s)${journeyCancelled ? " [CANCELED]" : ""}`,
 	);
 }

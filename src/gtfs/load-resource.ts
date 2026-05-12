@@ -8,7 +8,15 @@ import { getOperatingTripsByLineAndDirection } from "../utils/get-operating-trip
 import { resetServiceOperationCache } from "../utils/is-service-operating-on.js";
 
 import { downloadResource } from "./download-resource.js";
-import { importResource } from "./import-resource.js";
+import { type GtfsResource, importResource, type Trip } from "./import-resource.js";
+
+function buildTripsBySaeivCourse(gtfs: GtfsResource): Map<string, Trip> {
+	const index = new Map<string, Trip>();
+	for (const trip of gtfs.trips.values()) {
+		index.set(trip.id.split("-")[0], trip);
+	}
+	return index;
+}
 
 let currentInterval: NodeJS.Timeout | undefined;
 let operatingTripsJob: Cron | undefined;
@@ -19,6 +27,7 @@ export async function useGtfsResource(resourceUrl: string) {
 	const resource = {
 		gtfs: initialResource.resource,
 		operatingTripsByLineDirection: getOperatingTripsByLineAndDirection(initialResource.resource),
+		tripsBySaeivCourse: buildTripsBySaeivCourse(initialResource.resource),
 		lastModified: initialResource.lastModified,
 		importedAt: Temporal.Now.instant(),
 	};
@@ -59,6 +68,7 @@ export async function useGtfsResource(resourceUrl: string) {
 				resource.gtfs = newResource.resource;
 				resource.lastModified = newResource.lastModified;
 				resource.operatingTripsByLineDirection = getOperatingTripsByLineAndDirection(resource.gtfs);
+				resource.tripsBySaeivCourse = buildTripsBySaeivCourse(resource.gtfs);
 				resource.importedAt = Temporal.Now.instant();
 			} catch (cause) {
 				console.error(`✘ GTFS update routine failed:`, cause);
