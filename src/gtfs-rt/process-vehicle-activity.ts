@@ -127,6 +127,38 @@ export function processVehicleActivity(
 			: undefined),
 	});
 
+	if (trip && isCommercial && monitoredStopTimeIndex !== undefined && monitoredStopTimeIndex >= 0 && tripDescriptor) {
+		const arrivalDelay = Math.floor(
+			Temporal.Instant.from(monitoredCall.ExpectedArrivalTime)
+				.since(Temporal.Instant.from(monitoredCall.AimedArrivalTime))
+				.total("seconds"),
+		);
+		const departureDelay = Math.floor(
+			Temporal.Instant.from(monitoredCall.ExpectedDepartureTime)
+				.since(Temporal.Instant.from(monitoredCall.AimedDepartureTime))
+				.total("seconds"),
+		);
+
+		const propagateFromIndex = monitoredStopTimeIndex + (atStop || atTerminus ? 0 : 1);
+		const stopTimeUpdates: GtfsRealtime.transit_realtime.TripUpdate.IStopTimeUpdate[] = [];
+		for (let index = propagateFromIndex; index < trip.stopTimes.length; index += 1) {
+			const stopTime = trip.stopTimes[index];
+			stopTimeUpdates.push({
+				stopId: stopTime.stop.id,
+				stopSequence: stopTime.sequence,
+				arrival: { delay: arrivalDelay },
+				departure: { delay: departureDelay },
+				scheduleRelationship: GtfsRealtime.transit_realtime.TripUpdate.StopTimeUpdate.ScheduleRelationship.SCHEDULED,
+			});
+		}
+
+		store.tripUpdates.set(`VM:${trip.id}`, {
+			stopTimeUpdate: stopTimeUpdates,
+			timestamp: Math.floor(recordedAt.epochMilliseconds / 1000),
+			trip: tripDescriptor,
+		});
+	}
+
 	console.log(
 		` 	${vehicleRef}\t${lineId}\t${vehicle.MonitoredVehicleJourney.DirectionName} > ${extractSiriRef(vehicle.MonitoredVehicleJourney.DestinationRef)[3]} @ ${extractSiriRef(vehicle.MonitoredVehicleJourney.MonitoredCall.StopPointRef)[3]} ${trip ? (directMatch ? "=" : exactMatch ? "✓" : "~") : "✘"} (#${monitoredStopTime?.sequence ?? "?"} - atStop: ${atStop} - atTerminus: ${atTerminus})`,
 	);
