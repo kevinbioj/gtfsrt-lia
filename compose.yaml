@@ -6,6 +6,9 @@ services:
     container_name: gtfsrt-lia
     environment:
       - TZ=Europe/Paris
+    env_file:
+      - path: ./.env
+        required: false
     ports:
       - "127.0.0.1:50002:3000"
     restart: unless-stopped

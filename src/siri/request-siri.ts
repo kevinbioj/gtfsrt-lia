@@ -1,18 +1,29 @@
 import { XMLParser } from "fast-xml-parser";
 
-const parser = new XMLParser({
+export const siriXmlParser = new XMLParser({
 	htmlEntities: true,
 	removeNSPrefix: true,
 });
 
-export async function requestSiri(siriEndpoint: string, body: string) {
+export type RequestSiriOptions = {
+	timeoutMs?: number;
+};
+
+export async function requestSiri(siriEndpoint: string, body: string, options: RequestSiriOptions = {}) {
 	const response = await fetch(siriEndpoint, {
 		body,
 		headers: { "Content-Type": "application/xml" },
 		method: "POST",
-		signal: AbortSignal.timeout(10_000),
+		signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
 	});
 
 	const serialized = await response.text();
-	return parser.parse(serialized);
+
+	if (!response.ok) {
+		throw new Error(
+			`SIRI request failed: HTTP ${response.status} ${response.statusText} — ${serialized.slice(0, 500)}`,
+		);
+	}
+
+	return siriXmlParser.parse(serialized);
 }
