@@ -12,10 +12,13 @@ import {
 import { extractSiriRef } from "../utils/extract-siri-ref.js";
 
 import { checkSiriStatus } from "./check-status.js";
-import { SUBSCRIBE_VEHICLE_MONITORING } from "./payloads.js";
+import { DELETE_SUBSCRIPTION, SUBSCRIBE_ESTIMATED_TIMETABLE, SUBSCRIBE_VEHICLE_MONITORING } from "./payloads.js";
 import { requestSiri } from "./request-siri.js";
 
+export type SubscriptionType = "vm" | "et";
+
 type SubscriptionState = {
+	type: SubscriptionType;
 	subscriptionRef: string;
 	lineRef: string;
 	subscribedAt: Temporal.Instant;
@@ -24,7 +27,11 @@ type SubscriptionState = {
 };
 
 const registry = new Map<string, SubscriptionState>();
-const lineRefBySubscriptionRef = new Map<string, string>();
+const stateBySubscriptionRef = new Map<string, SubscriptionState>();
+
+function registryKey(type: SubscriptionType, lineRef: string): string {
+	return `${type}:${lineRef}`;
+}
 
 function consumerAddress(): string {
 	const url = new URL(SIRI_CONSUMER_ADDRESS);
@@ -45,11 +52,24 @@ function extractSubscribeStatus(payload: unknown): { ok: boolean; errorCondition
 	return { ok: false, errorCondition: JSON.stringify(err ?? null) };
 }
 
-async function subscribeLine(lineRef: string): Promise<boolean> {
+function buildSubscribeBody(
+	type: SubscriptionType,
+	params: {
+		requestorRef: string;
+		consumerAddress: string;
+		subscriptionIdentifier: string;
+		initialTerminationTime: string;
+		lineRef: string;
+	},
+): string {
+	return type === "vm" ? SUBSCRIBE_VEHICLE_MONITORING(params) : SUBSCRIBE_ESTIMATED_TIMETABLE(params);
+}
+
+async function subscribeLine(type: SubscriptionType, lineRef: string): Promise<boolean> {
 	const subscriptionRef = randomUUID();
 	const terminationTime = Temporal.Now.instant().add({ minutes: SIRI_SUBSCRIPTION_TTL_MINUTES });
 
-	const body = SUBSCRIBE_VEHICLE_MONITORING({
+	const body = buildSubscribeBody(type, {
 		requestorRef: REQUESTOR_REF,
 		consumerAddress: consumerAddress(),
 		subscriptionIdentifier: subscriptionRef,
@@ -63,98 +83,108 @@ async function subscribeLine(lineRef: string): Promise<boolean> {
 		const payload = await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 20_000 });
 		const { ok, errorCondition } = extractSubscribeStatus(payload);
 		if (!ok) {
-			console.error(`✘ Subscribe rejected for line '${lineId}': ${errorCondition}`);
+			console.error(`✘ Subscribe[${type}] rejected for line '${lineId}': ${errorCondition}`);
 			return false;
 		}
 	} catch (cause) {
-		console.error(`✘ Subscribe HTTP error for line '${lineId}'`, cause);
+		console.error(`✘ Subscribe[${type}] HTTP error for line '${lineId}'`, cause);
 		return false;
 	}
 
-	registry.set(lineRef, {
+	const state: SubscriptionState = {
+		type,
 		subscriptionRef,
 		lineRef,
 		subscribedAt: Temporal.Now.instant(),
 		lastNotificationAt: null,
 		terminationTime,
-	});
-	lineRefBySubscriptionRef.set(subscriptionRef, lineRef);
-	console.log(`✓ Subscribed to line '${lineId}' (${subscriptionRef})`);
+	};
+	registry.set(registryKey(type, lineRef), state);
+	stateBySubscriptionRef.set(subscriptionRef, state);
+	console.log(`✓ Subscribed[${type}] to line '${lineId}' (${subscriptionRef})`);
 	return true;
 }
 
-async function unsubscribeLine(lineRef: string): Promise<void> {
-	const state = registry.get(lineRef);
+async function unsubscribeLine(type: SubscriptionType, lineRef: string): Promise<void> {
+	const state = registry.get(registryKey(type, lineRef));
 	if (!state) return;
 
 	const lineId = extractSiriRef(lineRef)[3];
+	const body = DELETE_SUBSCRIPTION(REQUESTOR_REF, state.subscriptionRef);
 
-	// LiA's DeleteSubscription ignores SubscriptionRef and wipes every subscription
-	// matching SubscriberRef — which collides across instances sharing
-	// RequestorRef="opendata". Skip the SIRI call and let InitialTerminationTime
-	// handle server-side cleanup.
-	registry.delete(lineRef);
-	lineRefBySubscriptionRef.delete(state.subscriptionRef);
-	console.log(`⛛ Released line '${lineId}' locally (LiA-side expires at ${state.terminationTime})`);
+	try {
+		await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 10_000 });
+		console.log(`✓ Unsubscribed[${type}] from line '${lineId}'`);
+	} catch (cause) {
+		console.error(`✘ DeleteSubscription[${type}] error for line '${lineId}'`, cause);
+	}
+
+	registry.delete(registryKey(type, lineRef));
+	stateBySubscriptionRef.delete(state.subscriptionRef);
 }
 
-export async function syncSubscriptions(monitoredLines: string[]): Promise<void> {
+function linesOfType(type: SubscriptionType): string[] {
+	const out: string[] = [];
+	for (const state of registry.values()) {
+		if (state.type === type) out.push(state.lineRef);
+	}
+	return out;
+}
+
+export async function syncSubscriptions(type: SubscriptionType, monitoredLines: string[]): Promise<void> {
 	const desired = new Set(monitoredLines);
-	const current = new Set(registry.keys());
+	const current = new Set(linesOfType(type));
 
 	const toAdd = [...desired].filter((l) => !current.has(l));
 	const toRemove = [...current].filter((l) => !desired.has(l));
 
 	for (const lineRef of toRemove) {
-		await unsubscribeLine(lineRef);
+		await unsubscribeLine(type, lineRef);
 	}
 
 	let successes = 0;
 	for (const lineRef of toAdd) {
-		const ok = await subscribeLine(lineRef);
+		const ok = await subscribeLine(type, lineRef);
 		if (ok) successes += 1;
 	}
 
-	if (toAdd.length > 0 && successes === 0 && registry.size === 0) {
-		throw new Error("All subscriptions failed — aborting to let orchestrator restart");
+	if (toAdd.length > 0 && successes === 0 && linesOfType(type).length === 0) {
+		throw new Error(`All ${type} subscriptions failed — aborting to let orchestrator restart`);
 	}
 }
 
 export async function renewAllSubscriptions(): Promise<void> {
 	console.log("➔ Renewing all SIRI subscriptions");
-	const lineRefs = [...registry.keys()];
-	for (const lineRef of lineRefs) {
-		await unsubscribeLine(lineRef);
-		await subscribeLine(lineRef);
+	const entries = [...registry.values()];
+	for (const state of entries) {
+		await unsubscribeLine(state.type, state.lineRef);
+		await subscribeLine(state.type, state.lineRef);
 	}
 }
 
 export async function terminateAllSubscriptions(): Promise<void> {
 	console.log("➔ Terminating all SIRI subscriptions");
-	const entries = [...registry.entries()];
-	await Promise.allSettled(entries.map(([lineRef]) => unsubscribeLine(lineRef)));
+	const entries = [...registry.values()];
+	await Promise.allSettled(entries.map((s) => unsubscribeLine(s.type, s.lineRef)));
 }
 
-export function markNotification(subscriptionRef: string): string | undefined {
-	const lineRef = lineRefBySubscriptionRef.get(subscriptionRef);
-	if (!lineRef) return undefined;
-	const state = registry.get(lineRef);
-	if (state) {
-		state.lastNotificationAt = Temporal.Now.instant();
-	}
-	return lineRef;
+export function markNotification(subscriptionRef: string): SubscriptionState | undefined {
+	const state = stateBySubscriptionRef.get(subscriptionRef);
+	if (!state) return undefined;
+	state.lastNotificationAt = Temporal.Now.instant();
+	return state;
 }
 
 export async function heartbeatTick(): Promise<void> {
 	const now = Temporal.Now.instant();
 	const threshold = SIRI_SUBSCRIPTION_HEARTBEAT_TIMEOUT_SECONDS;
 
-	const stale: string[] = [];
-	for (const [lineRef, state] of registry) {
+	const stale: SubscriptionState[] = [];
+	for (const state of registry.values()) {
 		if (now.since(state.subscribedAt).total("seconds") < threshold) continue;
 		const last = state.lastNotificationAt ?? state.subscribedAt;
 		if (now.since(last).total("seconds") < threshold) continue;
-		stale.push(lineRef);
+		stale.push(state);
 	}
 
 	if (stale.length === 0) return;
@@ -164,9 +194,9 @@ export async function heartbeatTick(): Promise<void> {
 
 	if (!producerHealthy) {
 		console.error("✘ CheckStatus failed, rebinding stale subscriptions");
-		for (const lineRef of stale) {
-			await unsubscribeLine(lineRef);
-			await subscribeLine(lineRef);
+		for (const state of stale) {
+			await unsubscribeLine(state.type, state.lineRef);
+			await subscribeLine(state.type, state.lineRef);
 		}
 	} else {
 		console.log("⛛ CheckStatus OK — producer is up, leaving subscriptions in place");

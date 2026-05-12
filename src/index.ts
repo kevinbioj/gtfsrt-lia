@@ -3,10 +3,19 @@ import { Hono } from "hono";
 import { rateLimiter } from "hono-rate-limiter";
 import { Temporal } from "temporal-polyfill";
 
-import { GTFS_RESOURCE_URL, PORT, SIRI_ENDPOINT, SIRI_SUBSCRIPTION_RENEWAL_MINUTES } from "./config.js";
+import {
+	GTFS_RESOURCE_URL,
+	PORT,
+	REQUESTOR_REF,
+	SIRI_ENDPOINT,
+	SIRI_ET_POLL_INTERVAL_MS,
+	SIRI_SUBSCRIPTION_RENEWAL_MINUTES,
+} from "./config.js";
 import { useGtfsResource } from "./gtfs/load-resource.js";
 import { handleRequest } from "./gtfs-rt/handle-request.js";
+import { processEstimatedJourney } from "./gtfs-rt/process-estimated-journey.js";
 import { useRealtimeStore } from "./gtfs-rt/use-realtime-store.js";
+import { fetchEstimatedTimetable } from "./siri/fetch-estimated-timetable.js";
 import { fetchMonitoredLines } from "./siri/fetch-monitored-lines.js";
 import { makeNotificationHandler } from "./siri/handle-notification.js";
 import {
@@ -49,20 +58,52 @@ console.log(`➔ Listening on :${PORT}`);
 
 let monitoredLines = await fetchMonitoredLines(SIRI_ENDPOINT);
 console.log(`✓ ${monitoredLines.length} line(s) to monitor`);
-await syncSubscriptions(monitoredLines);
+// VM in push (subscription). ET subscription is no-op on LiA's side (Status=true but no notifications)
+// so we poll ET separately below.
+await syncSubscriptions("vm", monitoredLines);
 
 setInterval(
 	async () => {
 		console.log("➔ Refreshing monitored lines from SIRI");
 		try {
 			monitoredLines = await fetchMonitoredLines(SIRI_ENDPOINT);
-			await syncSubscriptions(monitoredLines);
+			await syncSubscriptions("vm", monitoredLines);
 		} catch (cause) {
 			console.error("✘ Failed to refresh monitored lines", cause);
 		}
 	},
 	Temporal.Duration.from({ hours: 1 }).total("milliseconds"),
 );
+
+let etPollIdx = 0;
+async function pollEstimatedTimetable(): Promise<void> {
+	if (monitoredLines.length === 0) {
+		setTimeout(pollEstimatedTimetable, SIRI_ET_POLL_INTERVAL_MS);
+		return;
+	}
+	if (etPollIdx >= monitoredLines.length) etPollIdx = 0;
+
+	const startedAt = Date.now();
+	const lineRef = monitoredLines[etPollIdx];
+	etPollIdx += 1;
+
+	try {
+		const journeys = await fetchEstimatedTimetable(SIRI_ENDPOINT, REQUESTOR_REF, lineRef);
+		for (const journey of journeys) {
+			try {
+				processEstimatedJourney(journey, gtfsResource, store);
+			} catch (cause) {
+				console.error("✘ Failed to process EstimatedVehicleJourney", cause);
+			}
+		}
+	} catch (cause) {
+		console.error(`✘ ET poll failed for ${lineRef}`, cause);
+	}
+
+	const wait = Math.max(SIRI_ET_POLL_INTERVAL_MS - (Date.now() - startedAt), 0);
+	setTimeout(pollEstimatedTimetable, wait);
+}
+pollEstimatedTimetable();
 
 setInterval(
 	async () => {

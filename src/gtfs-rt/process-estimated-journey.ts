@@ -1,0 +1,150 @@
+import GtfsRealtime from "gtfs-realtime-bindings";
+import { Temporal } from "temporal-polyfill";
+
+import type { Trip } from "../gtfs/import-resource.js";
+import type { useGtfsResource } from "../gtfs/load-resource.js";
+import type { EstimatedCall, EstimatedVehicleJourney } from "../siri/estimated-vehicle-journey.js";
+import { extractSiriRef } from "../utils/extract-siri-ref.js";
+
+import type { useRealtimeStore } from "./use-realtime-store.js";
+
+type GtfsLiveResource = Awaited<ReturnType<typeof useGtfsResource>>;
+type RealtimeStore = ReturnType<typeof useRealtimeStore>;
+
+function toArray<T>(value: T | T[] | undefined): T[] {
+	if (value === undefined) return [];
+	return Array.isArray(value) ? value : [value];
+}
+
+function isCancelled(value: boolean | string | undefined): boolean {
+	return value === true || value === "true";
+}
+
+function findTrip(journey: EstimatedVehicleJourney, gtfsResource: GtfsLiveResource): Trip | undefined {
+	const lineId = extractSiriRef(journey.LineRef)[3];
+	const estimatedCalls = toArray(journey.EstimatedCalls?.EstimatedCall);
+	const recordedCalls = toArray(journey.RecordedCalls?.RecordedCall);
+
+	const originCall = recordedCalls[0] ?? estimatedCalls[0];
+	if (!originCall) return undefined;
+
+	const originAimed = originCall.AimedDepartureTime ?? originCall.AimedArrivalTime;
+	if (!originAimed) return undefined;
+
+	const originStopId = extractSiriRef(originCall.StopPointRef)[3];
+	const originAimedTime = Temporal.Instant.from(originAimed).toZonedDateTimeISO("Europe/Paris").toPlainTime();
+
+	const candidates: Trip[] = [
+		...(gtfsResource.operatingTripsByLineDirection.get(`${lineId}:0`) ?? []),
+		...(gtfsResource.operatingTripsByLineDirection.get(`${lineId}:1`) ?? []),
+	];
+
+	const exact = candidates.find(
+		(trip) => trip.stopTimes[0]?.stop.id === originStopId && trip.stopTimes[0]?.time.equals(originAimedTime),
+	);
+	if (exact) return exact;
+
+	return candidates
+		.filter((trip) => trip.stopTimes[0]?.stop.id === originStopId)
+		.toSorted((a, b) =>
+			Temporal.Duration.compare(
+				a.stopTimes[0] ? originAimedTime.since(a.stopTimes[0].time).abs() : Temporal.Duration.from({ hours: 24 }),
+				b.stopTimes[0] ? originAimedTime.since(b.stopTimes[0].time).abs() : Temporal.Duration.from({ hours: 24 }),
+			),
+		)
+		.at(0);
+}
+
+function epochSeconds(iso: string): number {
+	return Math.floor(Temporal.Instant.from(iso).epochMilliseconds / 1000);
+}
+
+function delaySeconds(expected: string | undefined, aimed: string | undefined): number {
+	if (!expected || !aimed) return 0;
+	return Temporal.Instant.from(expected).since(Temporal.Instant.from(aimed)).total("seconds");
+}
+
+export function processEstimatedJourney(
+	journey: EstimatedVehicleJourney,
+	gtfsResource: GtfsLiveResource,
+	store: RealtimeStore,
+): void {
+	const trip = findTrip(journey, gtfsResource);
+	if (!trip) return;
+
+	const lineId = extractSiriRef(journey.LineRef)[3];
+	const callsByStopId = new Map<string, EstimatedCall>();
+	for (const call of toArray(journey.EstimatedCalls?.EstimatedCall)) {
+		callsByStopId.set(extractSiriRef(call.StopPointRef)[3], call);
+	}
+
+	const recordedStopIds = new Set<string>();
+	for (const call of toArray(journey.RecordedCalls?.RecordedCall)) {
+		recordedStopIds.add(extractSiriRef(call.StopPointRef)[3]);
+	}
+
+	const journeyCancelled = isCancelled(journey.Cancellation);
+
+	const stopTimeUpdates: GtfsRealtime.transit_realtime.TripUpdate.IStopTimeUpdate[] = [];
+
+	for (let index = 0; index < trip.stopTimes.length; index += 1) {
+		const stopTime = trip.stopTimes[index];
+		if (recordedStopIds.has(stopTime.stop.id)) continue;
+
+		const call = callsByStopId.get(stopTime.stop.id);
+		if (!call) continue;
+
+		const stopCancelled =
+			isCancelled(call.Cancellation) || call.ArrivalStatus === "cancelled" || call.DepartureStatus === "cancelled";
+
+		if (stopCancelled) {
+			stopTimeUpdates.push({
+				stopId: stopTime.stop.id,
+				stopSequence: stopTime.sequence,
+				scheduleRelationship: GtfsRealtime.transit_realtime.TripUpdate.StopTimeUpdate.ScheduleRelationship.SKIPPED,
+			});
+			continue;
+		}
+
+		const arrivalRef = call.ExpectedArrivalTime ?? call.AimedArrivalTime;
+		const departureRef = call.ExpectedDepartureTime ?? call.AimedDepartureTime;
+
+		const arrival = arrivalRef
+			? { time: epochSeconds(arrivalRef), delay: delaySeconds(call.ExpectedArrivalTime, call.AimedArrivalTime) }
+			: undefined;
+		const departure = departureRef
+			? { time: epochSeconds(departureRef), delay: delaySeconds(call.ExpectedDepartureTime, call.AimedDepartureTime) }
+			: undefined;
+
+		if (!arrival && !departure) continue;
+
+		stopTimeUpdates.push({
+			stopId: stopTime.stop.id,
+			stopSequence: stopTime.sequence,
+			arrival,
+			departure,
+			scheduleRelationship: GtfsRealtime.transit_realtime.TripUpdate.StopTimeUpdate.ScheduleRelationship.SCHEDULED,
+		});
+	}
+
+	const tripDescriptor: GtfsRealtime.transit_realtime.ITripDescriptor = {
+		tripId: trip.id,
+		routeId: lineId,
+		directionId: trip.directionId,
+		scheduleRelationship: journeyCancelled
+			? GtfsRealtime.transit_realtime.TripDescriptor.ScheduleRelationship.CANCELED
+			: GtfsRealtime.transit_realtime.TripDescriptor.ScheduleRelationship.SCHEDULED,
+	};
+
+	const recordedAt = journey.RecordedAtTime ? Temporal.Instant.from(journey.RecordedAtTime) : Temporal.Now.instant();
+
+	store.tripUpdates.set(`ET:${trip.id}`, {
+		stopTimeUpdate: journeyCancelled ? [] : stopTimeUpdates,
+		timestamp: Math.floor(recordedAt.epochMilliseconds / 1000),
+		trip: tripDescriptor,
+	});
+
+	console.log(
+		` 	ET\t${lineId}\t${trip.id}\t${stopTimeUpdates.length} stop(s)${journeyCancelled ? " [CANCELED]" : ""}`,
+	);
+}
