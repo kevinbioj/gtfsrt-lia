@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Temporal } from "temporal-polyfill";
 
 import {
@@ -66,7 +65,8 @@ function buildSubscribeBody(
 }
 
 async function subscribeLine(type: SubscriptionType, lineRef: string): Promise<boolean> {
-	const subscriptionRef = randomUUID();
+	const lineId = extractSiriRef(lineRef)[3];
+	const subscriptionRef = `${type}-${lineId}`;
 	const terminationTime = Temporal.Now.instant().add({ minutes: SIRI_SUBSCRIPTION_TTL_MINUTES });
 
 	const body = buildSubscribeBody(type, {
@@ -76,8 +76,6 @@ async function subscribeLine(type: SubscriptionType, lineRef: string): Promise<b
 		initialTerminationTime: terminationTime.toString(),
 		lineRef,
 	});
-
-	const lineId = extractSiriRef(lineRef)[3];
 
 	try {
 		const payload = await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 20_000 });
