@@ -18,12 +18,7 @@ import { useRealtimeStore } from "./gtfs-rt/use-realtime-store.js";
 import { fetchEstimatedTimetable } from "./siri/fetch-estimated-timetable.js";
 import { fetchMonitoredLines } from "./siri/fetch-monitored-lines.js";
 import { makeNotificationHandler } from "./siri/handle-notification.js";
-import {
-	heartbeatTick,
-	renewAllSubscriptions,
-	syncSubscriptions,
-	terminateAllSubscriptions,
-} from "./siri/subscriptions.js";
+import { renewAllSubscriptions, syncSubscriptions, terminateAllSubscriptions } from "./siri/subscriptions.js";
 
 console.log(` ,----.,--------.,------.,---.        ,------.,--------. ,--.   ,--.  ,---.
 '  .-./'--.  .--'|  .---'   .-',-----.|  .--. '--.  .--' |  |   \`--' /  O  \\
@@ -114,13 +109,6 @@ setInterval(
 		}
 	},
 	Temporal.Duration.from({ minutes: SIRI_SUBSCRIPTION_RENEWAL_MINUTES }).total("milliseconds"),
-);
-
-setInterval(
-	() => {
-		heartbeatTick().catch((cause) => console.error("✘ Heartbeat tick failed", cause));
-	},
-	Temporal.Duration.from({ seconds: 15 }).total("milliseconds"),
 );
 
 let shuttingDown = false;

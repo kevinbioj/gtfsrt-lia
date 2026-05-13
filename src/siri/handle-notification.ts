@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip as gunzipCb } from "node:zlib";
 import type { Context } from "hono";
@@ -14,7 +14,6 @@ import type { EstimatedVehicleJourney } from "./estimated-vehicle-journey.js";
 import type { VehicleActivity } from "./fetch-monitored-vehicles.js";
 import { NOTIFY_ESTIMATED_TIMETABLE_RESPONSE, NOTIFY_VEHICLE_MONITORING_RESPONSE } from "./payloads.js";
 import { siriXmlParser } from "./request-siri.js";
-import { markNotification } from "./subscriptions.js";
 
 const gunzip = promisify(gunzipCb);
 
@@ -69,7 +68,6 @@ function processVehicleMonitoringNotification(
 	);
 
 	for (const delivery of deliveries) {
-		if (delivery.SubscriptionRef) markNotification(delivery.SubscriptionRef);
 		for (const vehicle of toArray<VehicleActivity>(delivery.VehicleActivity)) {
 			try {
 				processVehicleActivity(vehicle, gtfsResource, store);
@@ -97,7 +95,6 @@ function processEstimatedTimetableNotification(
 	);
 
 	for (const delivery of deliveries) {
-		if (delivery.SubscriptionRef) markNotification(delivery.SubscriptionRef);
 		for (const frame of toArray<Frame>(delivery.EstimatedJourneyVersionFrame)) {
 			for (const journey of toArray<EstimatedVehicleJourney>(frame.EstimatedVehicleJourney)) {
 				try {
@@ -128,11 +125,13 @@ export function makeNotificationHandler(gtfsResource: GtfsLiveResource, store: R
 			xml = encoding === "gzip" ? (await gunzip(buf)).toString("utf8") : buf.toString("utf8");
 		} catch (cause) {
 			console.error("✘ Failed to read notification body", cause);
-			return c.body(buildAckResponse("unknown", "", false), 200, { "Content-Type": "application/xml" });
+			return c.body(buildAckResponse("unknown", "", false), 200, { "Content-Type": "application/xml", Connection: "close" });
 		}
 
 		let kind: NotificationKind = "unknown";
 		let requestMessageRef = "";
+
+		const bodyHash = createHash("sha1").update(xml).digest("hex").slice(0, 12);
 
 		try {
 			const payload = siriXmlParser.parse(xml);
@@ -141,6 +140,14 @@ export function makeNotificationHandler(gtfsResource: GtfsLiveResource, store: R
 			if (kind === "vm") {
 				const notify = payload?.Envelope?.Body?.NotifyVehicleMonitoring;
 				requestMessageRef = extractRequestMessageRef(notify);
+				const firstDelivery = toArray(
+					(notify as { Notification?: { VehicleMonitoringDelivery?: unknown } })?.Notification
+						?.VehicleMonitoringDelivery,
+				)[0] as { SubscriptionRef?: string; VehicleActivity?: VehicleActivity | VehicleActivity[] } | undefined;
+				const firstVehicle = toArray<VehicleActivity>(firstDelivery?.VehicleActivity)[0];
+				console.log(
+					`     [vm] hash=${bodyHash} msgId='${requestMessageRef}' sub='${firstDelivery?.SubscriptionRef ?? ""}' recordedAt='${firstVehicle?.RecordedAtTime ?? ""}' vehicleRef='${firstVehicle?.VehicleMonitoringRef ?? ""}'`,
+				);
 				processVehicleMonitoringNotification(notify, gtfsResource, store);
 			} else if (kind === "et") {
 				const notify = payload?.Envelope?.Body?.NotifyEstimatedTimetable;
@@ -148,13 +155,13 @@ export function makeNotificationHandler(gtfsResource: GtfsLiveResource, store: R
 				processEstimatedTimetableNotification(notify, gtfsResource, store);
 			} else {
 				console.warn("✘ Unknown notification body shape, ignoring");
-				return c.body(buildAckResponse("unknown", "", false), 200, { "Content-Type": "application/xml" });
+				return c.body(buildAckResponse("unknown", "", false), 200, { "Content-Type": "application/xml", Connection: "close" });
 			}
 		} catch (cause) {
 			console.error("✘ Failed to parse notification", cause);
-			return c.body(buildAckResponse(kind, requestMessageRef, false), 200, { "Content-Type": "application/xml" });
+			return c.body(buildAckResponse(kind, requestMessageRef, false), 200, { "Content-Type": "application/xml", Connection: "close" });
 		}
 
-		return c.body(buildAckResponse(kind, requestMessageRef, true), 200, { "Content-Type": "application/xml" });
+		return c.body(buildAckResponse(kind, requestMessageRef, true), 200, { "Content-Type": "application/xml", Connection: "close" });
 	};
 }

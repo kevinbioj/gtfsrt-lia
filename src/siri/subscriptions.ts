@@ -1,16 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { Temporal } from "temporal-polyfill";
+
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
 	REQUESTOR_REF,
 	SIRI_CONSUMER_ADDRESS,
 	SIRI_ENDPOINT,
 	SIRI_NOTIFY_TOKEN,
-	SIRI_SUBSCRIPTION_HEARTBEAT_TIMEOUT_SECONDS,
 	SIRI_SUBSCRIPTION_TTL_MINUTES,
 } from "../config.js";
 import { extractSiriRef } from "../utils/extract-siri-ref.js";
 
-import { checkSiriStatus } from "./check-status.js";
 import { DELETE_SUBSCRIPTION, SUBSCRIBE_ESTIMATED_TIMETABLE, SUBSCRIBE_VEHICLE_MONITORING } from "./payloads.js";
 import { requestSiri } from "./request-siri.js";
 
@@ -20,22 +21,20 @@ type SubscriptionState = {
 	type: SubscriptionType;
 	subscriptionRef: string;
 	lineRef: string;
-	subscribedAt: Temporal.Instant;
-	lastNotificationAt: Temporal.Instant | null;
 	terminationTime: Temporal.Instant;
 };
 
 const registry = new Map<string, SubscriptionState>();
-const stateBySubscriptionRef = new Map<string, SubscriptionState>();
 
 function registryKey(type: SubscriptionType, lineRef: string): string {
 	return `${type}:${lineRef}`;
 }
 
-function consumerAddress(): string {
+function consumerAddress(nonce: string): string {
 	const url = new URL(SIRI_CONSUMER_ADDRESS);
 	url.searchParams.set("token", SIRI_NOTIFY_TOKEN);
-	return url.toString();
+	url.searchParams.set("nonce", nonce);
+	return url.toString().replace(/&/g, "&amp;");
 }
 
 function extractSubscribeStatus(payload: unknown): { ok: boolean; errorCondition?: string } {
@@ -61,17 +60,23 @@ function buildSubscribeBody(
 		lineRef: string;
 	},
 ): string {
-	return type === "vm" ? SUBSCRIBE_VEHICLE_MONITORING(params) : SUBSCRIBE_ESTIMATED_TIMETABLE(params);
+	if (type === "vm") {
+		return SUBSCRIBE_VEHICLE_MONITORING({
+			...params,
+			changeBeforeUpdates: "PT15S",
+		});
+	}
+	return SUBSCRIBE_ESTIMATED_TIMETABLE(params);
 }
 
 async function subscribeLine(type: SubscriptionType, lineRef: string): Promise<boolean> {
 	const lineId = extractSiriRef(lineRef)[3];
-	const subscriptionRef = `${type}-${lineId}`;
+	const subscriptionRef = `${type}-${lineId}-${Date.now()}`;
 	const terminationTime = Temporal.Now.instant().add({ minutes: SIRI_SUBSCRIPTION_TTL_MINUTES });
 
 	const body = buildSubscribeBody(type, {
 		requestorRef: REQUESTOR_REF,
-		consumerAddress: consumerAddress(),
+		consumerAddress: consumerAddress(randomUUID()),
 		subscriptionIdentifier: subscriptionRef,
 		initialTerminationTime: terminationTime.toString(),
 		lineRef,
@@ -79,6 +84,10 @@ async function subscribeLine(type: SubscriptionType, lineRef: string): Promise<b
 
 	try {
 		const payload = await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 20_000 });
+		const responseStatus = (
+			payload as { Envelope?: { Body?: { SubscribeResponse?: { Answer?: { ResponseStatus?: unknown } } } } }
+		)?.Envelope?.Body?.SubscribeResponse?.Answer?.ResponseStatus;
+		console.log(`     Subscribe[${type}] '${lineId}' ResponseStatus: ${JSON.stringify(responseStatus)}`);
 		const { ok, errorCondition } = extractSubscribeStatus(payload);
 		if (!ok) {
 			console.error(`✘ Subscribe[${type}] rejected for line '${lineId}': ${errorCondition}`);
@@ -93,12 +102,9 @@ async function subscribeLine(type: SubscriptionType, lineRef: string): Promise<b
 		type,
 		subscriptionRef,
 		lineRef,
-		subscribedAt: Temporal.Now.instant(),
-		lastNotificationAt: null,
 		terminationTime,
 	};
 	registry.set(registryKey(type, lineRef), state);
-	stateBySubscriptionRef.set(subscriptionRef, state);
 	console.log(`✓ Subscribed[${type}] to line '${lineId}' (${subscriptionRef})`);
 	return true;
 }
@@ -111,14 +117,23 @@ async function unsubscribeLine(type: SubscriptionType, lineRef: string): Promise
 	const body = DELETE_SUBSCRIPTION(REQUESTOR_REF, state.subscriptionRef);
 
 	try {
-		await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 10_000 });
+		const payload = await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 10_000 });
+		const terminationStatus = (
+			payload as {
+				Envelope?: {
+					Body?: { DeleteSubscriptionResponse?: { Answer?: { TerminationResponseStatus?: unknown } } };
+				};
+			}
+		)?.Envelope?.Body?.DeleteSubscriptionResponse?.Answer?.TerminationResponseStatus;
+		console.log(
+			`     Unsubscribe[${type}] '${lineId}' TerminationResponseStatus: ${JSON.stringify(terminationStatus)}`,
+		);
 		console.log(`✓ Unsubscribed[${type}] from line '${lineId}'`);
 	} catch (cause) {
 		console.error(`✘ DeleteSubscription[${type}] error for line '${lineId}'`, cause);
 	}
 
 	registry.delete(registryKey(type, lineRef));
-	stateBySubscriptionRef.delete(state.subscriptionRef);
 }
 
 function linesOfType(type: SubscriptionType): string[] {
@@ -129,6 +144,8 @@ function linesOfType(type: SubscriptionType): string[] {
 	return out;
 }
 
+const PER_REQUEST_GAP_MS = 1000;
+
 export async function syncSubscriptions(type: SubscriptionType, monitoredLines: string[]): Promise<void> {
 	const desired = new Set(monitoredLines);
 	const current = new Set(linesOfType(type));
@@ -138,12 +155,14 @@ export async function syncSubscriptions(type: SubscriptionType, monitoredLines: 
 
 	for (const lineRef of toRemove) {
 		await unsubscribeLine(type, lineRef);
+		await sleep(PER_REQUEST_GAP_MS);
 	}
 
 	let successes = 0;
 	for (const lineRef of toAdd) {
 		const ok = await subscribeLine(type, lineRef);
 		if (ok) successes += 1;
+		await sleep(PER_REQUEST_GAP_MS);
 	}
 
 	if (toAdd.length > 0 && successes === 0 && linesOfType(type).length === 0) {
@@ -152,11 +171,11 @@ export async function syncSubscriptions(type: SubscriptionType, monitoredLines: 
 }
 
 export async function renewAllSubscriptions(): Promise<void> {
-	console.log("➔ Renewing all SIRI subscriptions");
+	console.log("➔ Renewing all SIRI subscriptions (Subscribe-only, old ones expire via TTL)");
 	const entries = [...registry.values()];
 	for (const state of entries) {
-		await unsubscribeLine(state.type, state.lineRef);
 		await subscribeLine(state.type, state.lineRef);
+		await sleep(PER_REQUEST_GAP_MS);
 	}
 }
 
@@ -164,41 +183,6 @@ export async function terminateAllSubscriptions(): Promise<void> {
 	console.log("➔ Terminating all SIRI subscriptions");
 	const entries = [...registry.values()];
 	await Promise.allSettled(entries.map((s) => unsubscribeLine(s.type, s.lineRef)));
-}
-
-export function markNotification(subscriptionRef: string): SubscriptionState | undefined {
-	const state = stateBySubscriptionRef.get(subscriptionRef);
-	if (!state) return undefined;
-	state.lastNotificationAt = Temporal.Now.instant();
-	return state;
-}
-
-export async function heartbeatTick(): Promise<void> {
-	const now = Temporal.Now.instant();
-	const threshold = SIRI_SUBSCRIPTION_HEARTBEAT_TIMEOUT_SECONDS;
-
-	const stale: SubscriptionState[] = [];
-	for (const state of registry.values()) {
-		if (now.since(state.subscribedAt).total("seconds") < threshold) continue;
-		const last = state.lastNotificationAt ?? state.subscribedAt;
-		if (now.since(last).total("seconds") < threshold) continue;
-		stale.push(state);
-	}
-
-	if (stale.length === 0) return;
-
-	console.log(`➔ Heartbeat watchdog: ${stale.length} subscription(s) silent past ${threshold}s, probing CheckStatus`);
-	const producerHealthy = await checkSiriStatus(SIRI_ENDPOINT, REQUESTOR_REF);
-
-	if (!producerHealthy) {
-		console.error("✘ CheckStatus failed, rebinding stale subscriptions");
-		for (const state of stale) {
-			await unsubscribeLine(state.type, state.lineRef);
-			await subscribeLine(state.type, state.lineRef);
-		}
-	} else {
-		console.log("⛛ CheckStatus OK — producer is up, leaving subscriptions in place");
-	}
 }
 
 export function getRegistrySize(): number {

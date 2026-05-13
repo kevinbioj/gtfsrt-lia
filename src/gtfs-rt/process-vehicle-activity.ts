@@ -10,6 +10,8 @@ import type { useRealtimeStore } from "./use-realtime-store.js";
 type GtfsLiveResource = Awaited<ReturnType<typeof useGtfsResource>>;
 type RealtimeStore = ReturnType<typeof useRealtimeStore>;
 
+const lastRecordedByVehicle = new Map<string, Temporal.Instant>();
+
 export function processVehicleActivity(
 	vehicle: VehicleActivity,
 	gtfsResource: GtfsLiveResource,
@@ -26,6 +28,17 @@ export function processVehicleActivity(
 	const isCommercial = vehicle.MonitoredVehicleJourney.MonitoredCall.DestinationDisplay !== "SANS VOYAGEURS";
 	const directionId = vehicle.MonitoredVehicleJourney.DirectionName === "A" ? 0 : 1;
 	const vehicleRef = extractSiriRef(vehicle.VehicleMonitoringRef)[3].padStart(3, "0");
+
+	const recordedAtInstant = Temporal.Instant.from(vehicle.RecordedAtTime);
+	const watermarkKey = `${lineId}:${vehicleRef}`;
+	const previousRecordedAt = lastRecordedByVehicle.get(watermarkKey);
+	if (previousRecordedAt && Temporal.Instant.compare(recordedAtInstant, previousRecordedAt) < 0) {
+		console.log(
+			`     ${vehicleRef}\t${lineId}\t↩ ghost notification ignored (recorded=${vehicle.RecordedAtTime}, watermark=${previousRecordedAt.toString()})`,
+		);
+		return;
+	}
+	lastRecordedByVehicle.set(watermarkKey, recordedAtInstant);
 
 	const monitoredCall = vehicle.MonitoredVehicleJourney.MonitoredCall;
 	const monitoredCallStopId = extractSiriRef(monitoredCall.StopPointRef)[3];

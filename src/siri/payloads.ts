@@ -70,6 +70,21 @@ export type SubscribeVehicleMonitoringInput = {
 	subscriptionIdentifier: string;
 	initialTerminationTime: string;
 	lineRef: string;
+	// --- VehicleMonitoringRequest fields (optional) ---
+	previewInterval?: string;
+	startTime?: string;
+	directionRef?: string;
+	destinationRef?: string;
+	operatorRef?: string;
+	vehicleRef?: string;
+	vehicleMonitoringRef?: string;
+	vehicleMonitoringDetailLevel?: "minimum" | "basic" | "normal" | "calls" | "full";
+	maximumVehicles?: number;
+	language?: string;
+	// --- Subscription policy fields (optional) ---
+	incrementalUpdates?: boolean;
+	updateInterval?: string;
+	changeBeforeUpdates?: string;
 };
 
 export const SUBSCRIBE_VEHICLE_MONITORING = ({
@@ -78,9 +93,24 @@ export const SUBSCRIBE_VEHICLE_MONITORING = ({
 	subscriptionIdentifier,
 	initialTerminationTime,
 	lineRef,
+	previewInterval,
+	startTime,
+	directionRef,
+	destinationRef,
+	operatorRef,
+	vehicleRef,
+	vehicleMonitoringRef,
+	vehicleMonitoringDetailLevel,
+	maximumVehicles,
+	language,
+	incrementalUpdates,
+	updateInterval,
+	changeBeforeUpdates,
 }: SubscribeVehicleMonitoringInput) => {
 	const requestTimestamp = Temporal.Now.instant().toString();
 	const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
+	const tag = (name: string, value: string | number | boolean | undefined) =>
+		value === undefined ? "" : `<siri:${name}>${value}</siri:${name}>`;
 	return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
         <sw:Subscribe xmlns:sw="http://wsdl.siri.org.uk" xmlns:siri="http://www.siri.org.uk/siri">
@@ -98,8 +128,21 @@ export const SUBSCRIBE_VEHICLE_MONITORING = ({
               <siri:VehicleMonitoringRequest version="2.0:FR-IDF-2.4">
                 <siri:RequestTimestamp>${requestTimestamp}</siri:RequestTimestamp>
                 <siri:MessageIdentifier>${messageIdentifier}</siri:MessageIdentifier>
+                ${tag("PreviewInterval", previewInterval)}
+                ${tag("StartTime", startTime)}
                 <siri:LineRef>${lineRef}</siri:LineRef>
+                ${tag("DirectionRef", directionRef)}
+                ${tag("DestinationRef", destinationRef)}
+                ${tag("OperatorRef", operatorRef)}
+                ${tag("VehicleRef", vehicleRef)}
+                ${tag("VehicleMonitoringRef", vehicleMonitoringRef)}
+                ${tag("VehicleMonitoringDetailLevel", vehicleMonitoringDetailLevel)}
+                ${tag("MaximumVehicles", maximumVehicles)}
+                ${tag("Language", language)}
               </siri:VehicleMonitoringRequest>
+              ${tag("IncrementalUpdates", incrementalUpdates)}
+              ${tag("UpdateInterval", updateInterval)}
+              ${tag("ChangeBeforeUpdates", changeBeforeUpdates)}
             </siri:VehicleMonitoringSubscriptionRequest>
           </Request>
           <RequestExtension/>
