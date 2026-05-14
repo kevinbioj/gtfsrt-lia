@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip as gunzipCb } from "node:zlib";
 import type { Context } from "hono";
@@ -9,6 +9,7 @@ import type { useGtfsResource } from "../gtfs/load-resource.js";
 import { processEstimatedJourney } from "../gtfs-rt/process-estimated-journey.js";
 import { processVehicleActivity } from "../gtfs-rt/process-vehicle-activity.js";
 import type { useRealtimeStore } from "../gtfs-rt/use-realtime-store.js";
+import { toArray } from "../utils/to-array.js";
 
 import type { EstimatedVehicleJourney } from "./estimated-vehicle-journey.js";
 import type { VehicleActivity } from "./fetch-monitored-vehicles.js";
@@ -28,11 +29,6 @@ function safeTokenCompare(provided: string | undefined): boolean {
 	const b = Buffer.from(SIRI_NOTIFY_TOKEN);
 	if (a.length !== b.length) return false;
 	return timingSafeEqual(a, b);
-}
-
-function toArray<T>(value: T | T[] | undefined): T[] {
-	if (value === undefined) return [];
-	return Array.isArray(value) ? value : [value];
 }
 
 function detectKind(body: unknown): NotificationKind {
@@ -109,14 +105,12 @@ function processEstimatedTimetableNotification(
 
 export function makeNotificationHandler(gtfsResource: GtfsLiveResource, store: RealtimeStore) {
 	return async function handleNotification(c: Context): Promise<Response> {
-		const contentLength = c.req.header("content-length") ?? "?";
-		const contentEncoding = c.req.header("content-encoding") ?? "none";
-		console.log(`➔ POST /siri/notify (len=${contentLength}, enc=${contentEncoding})`);
-
 		if (!safeTokenCompare(c.req.query("token"))) {
 			console.warn("✘ /siri/notify: bad token");
 			return c.text("Unauthorized", 401);
 		}
+
+		const ackHeaders = { "Content-Type": "application/xml", Connection: "close" };
 
 		let xml: string;
 		try {
@@ -125,13 +119,11 @@ export function makeNotificationHandler(gtfsResource: GtfsLiveResource, store: R
 			xml = encoding === "gzip" ? (await gunzip(buf)).toString("utf8") : buf.toString("utf8");
 		} catch (cause) {
 			console.error("✘ Failed to read notification body", cause);
-			return c.body(buildAckResponse("unknown", "", false), 200, { "Content-Type": "application/xml", Connection: "close" });
+			return c.body(buildAckResponse("unknown", "", false), 200, ackHeaders);
 		}
 
 		let kind: NotificationKind = "unknown";
 		let requestMessageRef = "";
-
-		const bodyHash = createHash("sha1").update(xml).digest("hex").slice(0, 12);
 
 		try {
 			const payload = siriXmlParser.parse(xml);
@@ -140,14 +132,6 @@ export function makeNotificationHandler(gtfsResource: GtfsLiveResource, store: R
 			if (kind === "vm") {
 				const notify = payload?.Envelope?.Body?.NotifyVehicleMonitoring;
 				requestMessageRef = extractRequestMessageRef(notify);
-				const firstDelivery = toArray(
-					(notify as { Notification?: { VehicleMonitoringDelivery?: unknown } })?.Notification
-						?.VehicleMonitoringDelivery,
-				)[0] as { SubscriptionRef?: string; VehicleActivity?: VehicleActivity | VehicleActivity[] } | undefined;
-				const firstVehicle = toArray<VehicleActivity>(firstDelivery?.VehicleActivity)[0];
-				console.log(
-					`     [vm] hash=${bodyHash} msgId='${requestMessageRef}' sub='${firstDelivery?.SubscriptionRef ?? ""}' recordedAt='${firstVehicle?.RecordedAtTime ?? ""}' vehicleRef='${firstVehicle?.VehicleMonitoringRef ?? ""}'`,
-				);
 				processVehicleMonitoringNotification(notify, gtfsResource, store);
 			} else if (kind === "et") {
 				const notify = payload?.Envelope?.Body?.NotifyEstimatedTimetable;
@@ -155,13 +139,13 @@ export function makeNotificationHandler(gtfsResource: GtfsLiveResource, store: R
 				processEstimatedTimetableNotification(notify, gtfsResource, store);
 			} else {
 				console.warn("✘ Unknown notification body shape, ignoring");
-				return c.body(buildAckResponse("unknown", "", false), 200, { "Content-Type": "application/xml", Connection: "close" });
+				return c.body(buildAckResponse("unknown", "", false), 200, ackHeaders);
 			}
 		} catch (cause) {
 			console.error("✘ Failed to parse notification", cause);
-			return c.body(buildAckResponse(kind, requestMessageRef, false), 200, { "Content-Type": "application/xml", Connection: "close" });
+			return c.body(buildAckResponse(kind, requestMessageRef, false), 200, ackHeaders);
 		}
 
-		return c.body(buildAckResponse(kind, requestMessageRef, true), 200, { "Content-Type": "application/xml", Connection: "close" });
+		return c.body(buildAckResponse(kind, requestMessageRef, true), 200, ackHeaders);
 	};
 }

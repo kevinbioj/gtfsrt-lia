@@ -5,3 +5,7 @@ export function extractSiriRef(input?: string): [string, string, string, string,
 
 	return input.split(":") as [string, string, string, string, string];
 }
+
+export function extractSiriId(input?: string): string {
+	return extractSiriRef(input)[3];
+}

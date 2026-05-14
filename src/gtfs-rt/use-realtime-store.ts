@@ -3,17 +3,11 @@ import { Temporal } from "temporal-polyfill";
 
 import { SWEEP_THRESHOLD } from "../config.js";
 
-let currentInterval: NodeJS.Timeout | undefined;
-
 export function useRealtimeStore() {
 	const store = {
 		tripUpdates: new Map<string, GtfsRealtime.transit_realtime.ITripUpdate>(),
 		vehiclePositions: new Map<string, GtfsRealtime.transit_realtime.IVehiclePosition>(),
 	};
-
-	if (currentInterval !== undefined) {
-		clearInterval(currentInterval);
-	}
 
 	setInterval(() => {
 		const now = Temporal.Now.instant();
@@ -42,7 +36,7 @@ export function useRealtimeStore() {
 
 		for (const [id, vehicle] of store.vehiclePositions) {
 			if (
-				Temporal.Now.instant()
+				now
 					// biome-ignore lint/style/noNonNullAssertion: we always set timestamp in store
 					.since(Temporal.Instant.fromEpochMilliseconds(+vehicle.timestamp! * 1000))
 					.total("minutes") >= 10

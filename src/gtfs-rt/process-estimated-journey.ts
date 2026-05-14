@@ -4,17 +4,13 @@ import { Temporal } from "temporal-polyfill";
 import type { Trip } from "../gtfs/import-resource.js";
 import type { useGtfsResource } from "../gtfs/load-resource.js";
 import type { EstimatedCall, EstimatedVehicleJourney } from "../siri/estimated-vehicle-journey.js";
-import { extractSiriRef } from "../utils/extract-siri-ref.js";
+import { extractSiriId } from "../utils/extract-siri-ref.js";
+import { toArray } from "../utils/to-array.js";
 
 import type { useRealtimeStore } from "./use-realtime-store.js";
 
 type GtfsLiveResource = Awaited<ReturnType<typeof useGtfsResource>>;
 type RealtimeStore = ReturnType<typeof useRealtimeStore>;
-
-function toArray<T>(value: T | T[] | undefined): T[] {
-	if (value === undefined) return [];
-	return Array.isArray(value) ? value : [value];
-}
 
 function isCancelled(value: boolean | string | undefined): boolean {
 	return value === true || value === "true";
@@ -24,13 +20,13 @@ function findTrip(
 	journey: EstimatedVehicleJourney,
 	gtfsResource: GtfsLiveResource,
 ): { trip: Trip; direct: boolean } | undefined {
-	const saeivCourseId = extractSiriRef(journey.FramedVehicleJourneyRef?.DatedVehicleJourneyRef)[3];
+	const saeivCourseId = extractSiriId(journey.FramedVehicleJourneyRef?.DatedVehicleJourneyRef);
 	if (saeivCourseId) {
 		const direct = gtfsResource.tripsBySaeivCourse.get(saeivCourseId);
 		if (direct) return { trip: direct, direct: true };
 	}
 
-	const lineId = extractSiriRef(journey.LineRef)[3];
+	const lineId = extractSiriId(journey.LineRef);
 	const estimatedCalls = toArray(journey.EstimatedCalls?.EstimatedCall);
 	const recordedCalls = toArray(journey.RecordedCalls?.RecordedCall);
 
@@ -40,7 +36,7 @@ function findTrip(
 	const originAimed = originCall.AimedDepartureTime ?? originCall.AimedArrivalTime;
 	if (!originAimed) return undefined;
 
-	const originStopId = extractSiriRef(originCall.StopPointRef)[3];
+	const originStopId = extractSiriId(originCall.StopPointRef);
 	const originAimedTime = Temporal.Instant.from(originAimed).toZonedDateTimeISO("Europe/Paris").toPlainTime();
 
 	const candidates: Trip[] = [
@@ -57,8 +53,8 @@ function findTrip(
 		.filter((trip) => trip.stopTimes[0]?.stop.id === originStopId)
 		.toSorted((a, b) =>
 			Temporal.Duration.compare(
-				a.stopTimes[0] ? originAimedTime.since(a.stopTimes[0].time).abs() : Temporal.Duration.from({ hours: 24 }),
-				b.stopTimes[0] ? originAimedTime.since(b.stopTimes[0].time).abs() : Temporal.Duration.from({ hours: 24 }),
+				originAimedTime.since(a.stopTimes[0].time).abs(),
+				originAimedTime.since(b.stopTimes[0].time).abs(),
 			),
 		)
 		.at(0);
@@ -84,15 +80,15 @@ export function processEstimatedJourney(
 	if (!match) return;
 	const { trip, direct: directMatch } = match;
 
-	const lineId = extractSiriRef(journey.LineRef)[3];
+	const lineId = extractSiriId(journey.LineRef);
 	const callsByStopId = new Map<string, EstimatedCall>();
 	for (const call of toArray(journey.EstimatedCalls?.EstimatedCall)) {
-		callsByStopId.set(extractSiriRef(call.StopPointRef)[3], call);
+		callsByStopId.set(extractSiriId(call.StopPointRef), call);
 	}
 
 	const recordedStopIds = new Set<string>();
 	for (const call of toArray(journey.RecordedCalls?.RecordedCall)) {
-		recordedStopIds.add(extractSiriRef(call.StopPointRef)[3]);
+		recordedStopIds.add(extractSiriId(call.StopPointRef));
 	}
 
 	const journeyCancelled = isCancelled(journey.Cancellation);

@@ -80,8 +80,6 @@ export async function useGtfsResource(resourceUrl: string) {
 	return resource;
 }
 
-// --- loadResource
-
 async function loadResource(resourceUrl: string) {
 	console.log(`➔ Loading GTFS resource at '${resourceUrl}'.`);
 
@@ -96,7 +94,6 @@ async function loadResource(resourceUrl: string) {
 		return { resource, lastModified };
 	} catch (cause) {
 		throw new Error("Failed to load GTFS resource", { cause });
-		// console.log("✘ Failed to load resource!", error);
 	} finally {
 		await rm(workingDirectory, { recursive: true });
 	}

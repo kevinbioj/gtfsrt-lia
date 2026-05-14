@@ -3,7 +3,7 @@ import { Temporal } from "temporal-polyfill";
 import type { Trip } from "../gtfs/import-resource.js";
 import type { useGtfsResource } from "../gtfs/load-resource.js";
 import type { VehicleActivity } from "../siri/fetch-monitored-vehicles.js";
-import { extractSiriRef } from "../utils/extract-siri-ref.js";
+import { extractSiriId } from "../utils/extract-siri-ref.js";
 
 import type { useRealtimeStore } from "./use-realtime-store.js";
 
@@ -24,10 +24,10 @@ export function processVehicleActivity(
 		return;
 	}
 
-	const lineId = extractSiriRef(vehicle.MonitoredVehicleJourney.LineRef)[3];
+	const lineId = extractSiriId(vehicle.MonitoredVehicleJourney.LineRef);
 	const isCommercial = vehicle.MonitoredVehicleJourney.MonitoredCall.DestinationDisplay !== "SANS VOYAGEURS";
 	const directionId = vehicle.MonitoredVehicleJourney.DirectionName === "A" ? 0 : 1;
-	const vehicleRef = extractSiriRef(vehicle.VehicleMonitoringRef)[3].padStart(3, "0");
+	const vehicleRef = extractSiriId(vehicle.VehicleMonitoringRef).padStart(3, "0");
 
 	const recordedAtInstant = Temporal.Instant.from(vehicle.RecordedAtTime);
 	const watermarkKey = `${lineId}:${vehicleRef}`;
@@ -41,7 +41,7 @@ export function processVehicleActivity(
 	lastRecordedByVehicle.set(watermarkKey, recordedAtInstant);
 
 	const monitoredCall = vehicle.MonitoredVehicleJourney.MonitoredCall;
-	const monitoredCallStopId = extractSiriRef(monitoredCall.StopPointRef)[3];
+	const monitoredCallStopId = extractSiriId(monitoredCall.StopPointRef);
 	let trip: Trip | undefined;
 	let exactMatch = true;
 	let directMatch = false;
@@ -53,9 +53,7 @@ export function processVehicleActivity(
 		.toZonedDateTimeISO("Europe/Paris")
 		.toPlainTime();
 
-	const saeivCourseId = extractSiriRef(
-		vehicle.MonitoredVehicleJourney.FramedVehicleJourneyRef?.DatedVehicleJourneyRef,
-	)[3];
+	const saeivCourseId = extractSiriId(vehicle.MonitoredVehicleJourney.FramedVehicleJourneyRef?.DatedVehicleJourneyRef);
 	if (saeivCourseId) {
 		trip = gtfsResource.tripsBySaeivCourse.get(saeivCourseId);
 		if (trip) directMatch = true;
@@ -173,6 +171,6 @@ export function processVehicleActivity(
 	}
 
 	console.log(
-		` 	${vehicleRef}\t${lineId}\t${vehicle.MonitoredVehicleJourney.DirectionName} > ${extractSiriRef(vehicle.MonitoredVehicleJourney.DestinationRef)[3]} @ ${extractSiriRef(vehicle.MonitoredVehicleJourney.MonitoredCall.StopPointRef)[3]} ${trip ? (directMatch ? "=" : exactMatch ? "✓" : "~") : "✘"} (#${monitoredStopTime?.sequence ?? "?"} - atStop: ${atStop} - atTerminus: ${atTerminus})`,
+		` 	${vehicleRef}\t${lineId}\t${vehicle.MonitoredVehicleJourney.DirectionName} > ${extractSiriId(vehicle.MonitoredVehicleJourney.DestinationRef)} @ ${monitoredCallStopId} ${trip ? (directMatch ? "=" : exactMatch ? "✓" : "~") : "✘"} (#${monitoredStopTime?.sequence ?? "?"} - atStop: ${atStop} - atTerminus: ${atTerminus})`,
 	);
 }

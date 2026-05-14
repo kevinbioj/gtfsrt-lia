@@ -1,3 +1,5 @@
+import { REQUESTOR_REF } from "../config.js";
+
 import { LINES_DISCOVERY } from "./payloads.js";
 import { requestSiri } from "./request-siri.js";
 
@@ -7,7 +9,7 @@ type AnnotatedLine = {
 };
 
 export async function fetchMonitoredLines(siriEndpoint: string) {
-	const payload = await requestSiri(siriEndpoint, LINES_DISCOVERY("opendata"));
+	const payload = await requestSiri(siriEndpoint, LINES_DISCOVERY(REQUESTOR_REF));
 	const annotatedLines = payload.Envelope.Body.LinesDiscoveryResponse.Answer.AnnotatedLineRef as AnnotatedLine[];
 	return annotatedLines
 		.filter((annotatedLine) => annotatedLine.Monitored)

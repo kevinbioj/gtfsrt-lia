@@ -1,3 +1,5 @@
+import { toArray } from "../utils/to-array.js";
+
 import type { EstimatedVehicleJourney } from "./estimated-vehicle-journey.js";
 import { GET_ESTIMATED_TIMETABLE } from "./payloads.js";
 import { requestSiri } from "./request-siri.js";
@@ -7,17 +9,12 @@ type Frame = {
 	EstimatedVehicleJourney?: EstimatedVehicleJourney | EstimatedVehicleJourney[];
 };
 
-function toArray<T>(value: T | T[] | undefined): T[] {
-	if (value === undefined) return [];
-	return Array.isArray(value) ? value : [value];
-}
-
 export async function fetchEstimatedTimetable(
 	siriEndpoint: string,
 	requestorRef: string,
 	lineRef: string,
 ): Promise<EstimatedVehicleJourney[]> {
-	const payload = await requestSiri(siriEndpoint, GET_ESTIMATED_TIMETABLE(requestorRef, lineRef), {
+	const payload = await requestSiri(siriEndpoint, GET_ESTIMATED_TIMETABLE({ requestorRef, lineRef }), {
 		timeoutMs: 15_000,
 	});
 	const delivery = (

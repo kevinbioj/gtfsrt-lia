@@ -15,10 +15,11 @@ import { useGtfsResource } from "./gtfs/load-resource.js";
 import { handleRequest } from "./gtfs-rt/handle-request.js";
 import { processEstimatedJourney } from "./gtfs-rt/process-estimated-journey.js";
 import { useRealtimeStore } from "./gtfs-rt/use-realtime-store.js";
+import { checkSiriStatus } from "./siri/check-status.js";
 import { fetchEstimatedTimetable } from "./siri/fetch-estimated-timetable.js";
 import { fetchMonitoredLines } from "./siri/fetch-monitored-lines.js";
 import { makeNotificationHandler } from "./siri/handle-notification.js";
-import { renewAllSubscriptions, syncSubscriptions, terminateAllSubscriptions } from "./siri/subscriptions.js";
+import { renewAllSubscriptions, syncSubscriptions } from "./siri/subscriptions.js";
 
 console.log(` ,----.,--------.,------.,---.        ,------.,--------. ,--.   ,--.  ,---.
 '  .-./'--.  .--'|  .---'   .-',-----.|  .--. '--.  .--' |  |   \`--' /  O  \\
@@ -53,8 +54,6 @@ console.log(`➔ Listening on :${PORT}`);
 
 let monitoredLines = await fetchMonitoredLines(SIRI_ENDPOINT);
 console.log(`✓ ${monitoredLines.length} line(s) to monitor`);
-// VM in push (subscription). ET subscription is no-op on LiA's side (Status=true but no notifications)
-// so we poll ET separately below.
 await syncSubscriptions("vm", monitoredLines);
 
 setInterval(
@@ -111,6 +110,30 @@ setInterval(
 	Temporal.Duration.from({ minutes: SIRI_SUBSCRIPTION_RENEWAL_MINUTES }).total("milliseconds"),
 );
 
+let lastServiceStartedTime: string | null = null;
+setInterval(
+	async () => {
+		const result = await checkSiriStatus(SIRI_ENDPOINT, REQUESTOR_REF);
+		if (!result?.status) return;
+		if (lastServiceStartedTime === null) {
+			lastServiceStartedTime = result.serviceStartedTime;
+			return;
+		}
+		if (result.serviceStartedTime !== null && result.serviceStartedTime !== lastServiceStartedTime) {
+			console.warn(
+				`✘ SIRI producer restarted (ServiceStartedTime ${lastServiceStartedTime} → ${result.serviceStartedTime}), re-subscribing`,
+			);
+			lastServiceStartedTime = result.serviceStartedTime;
+			try {
+				await renewAllSubscriptions();
+			} catch (cause) {
+				console.error("✘ Re-subscription after producer restart failed", cause);
+			}
+		}
+	},
+	Temporal.Duration.from({ seconds: 60 }).total("milliseconds"),
+);
+
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
 	if (shuttingDown) return;
@@ -124,7 +147,7 @@ async function shutdown(signal: string): Promise<void> {
 	hardTimeout.unref();
 
 	server.close();
-	await terminateAllSubscriptions();
+	// await terminateAllSubscriptions();
 	process.exit(0);
 }
 

@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { Temporal } from "temporal-polyfill";
-
 import { setTimeout as sleep } from "node:timers/promises";
+import { Temporal } from "temporal-polyfill";
 
 import {
 	REQUESTOR_REF,
@@ -10,7 +9,7 @@ import {
 	SIRI_NOTIFY_TOKEN,
 	SIRI_SUBSCRIPTION_TTL_MINUTES,
 } from "../config.js";
-import { extractSiriRef } from "../utils/extract-siri-ref.js";
+import { extractSiriId } from "../utils/extract-siri-ref.js";
 
 import { DELETE_SUBSCRIPTION, SUBSCRIBE_ESTIMATED_TIMETABLE, SUBSCRIBE_VEHICLE_MONITORING } from "./payloads.js";
 import { requestSiri } from "./request-siri.js";
@@ -37,17 +36,17 @@ function consumerAddress(nonce: string): string {
 	return url.toString().replace(/&/g, "&amp;");
 }
 
-function extractSubscribeStatus(payload: unknown): { ok: boolean; errorCondition?: string } {
+function extractSubscribeResponseStatus(payload: unknown): { raw: unknown; ok: boolean; errorCondition?: string } {
 	const responseStatus = (
 		payload as { Envelope?: { Body?: { SubscribeResponse?: { Answer?: { ResponseStatus?: unknown } } } } }
 	)?.Envelope?.Body?.SubscribeResponse?.Answer?.ResponseStatus;
-	if (!responseStatus) return { ok: false, errorCondition: "missing ResponseStatus" };
+	if (!responseStatus) return { raw: undefined, ok: false, errorCondition: "missing ResponseStatus" };
 	const first = Array.isArray(responseStatus) ? responseStatus[0] : responseStatus;
 	const status = (first as { Status?: unknown }).Status;
 	const ok = status === true || status === "true";
-	if (ok) return { ok: true };
+	if (ok) return { raw: responseStatus, ok: true };
 	const err = (first as { ErrorCondition?: unknown }).ErrorCondition;
-	return { ok: false, errorCondition: JSON.stringify(err ?? null) };
+	return { raw: responseStatus, ok: false, errorCondition: JSON.stringify(err ?? null) };
 }
 
 function buildSubscribeBody(
@@ -64,31 +63,34 @@ function buildSubscribeBody(
 		return SUBSCRIBE_VEHICLE_MONITORING({
 			...params,
 			changeBeforeUpdates: "PT15S",
+			incrementalUpdates: true,
 		});
 	}
-	return SUBSCRIBE_ESTIMATED_TIMETABLE(params);
+
+	return SUBSCRIBE_ESTIMATED_TIMETABLE({
+		...params,
+		changeBeforeUpdates: "PT30S",
+		incrementalUpdates: false,
+		previewInterval: "PT1H",
+	});
 }
 
 async function subscribeLine(type: SubscriptionType, lineRef: string): Promise<boolean> {
-	const lineId = extractSiriRef(lineRef)[3];
-	const subscriptionRef = `${type}-${lineId}-${Date.now()}`;
+	const lineId = extractSiriId(lineRef);
+	const subscriptionRef = `GtfsBusTracker${process.env.NODE_ENV === "production" ? "Prod" : "Dev"}-${type.toUpperCase()}-${lineId}`;
 	const terminationTime = Temporal.Now.instant().add({ minutes: SIRI_SUBSCRIPTION_TTL_MINUTES });
 
 	const body = buildSubscribeBody(type, {
 		requestorRef: REQUESTOR_REF,
 		consumerAddress: consumerAddress(randomUUID()),
 		subscriptionIdentifier: subscriptionRef,
-		initialTerminationTime: terminationTime.toString(),
+		initialTerminationTime: terminationTime.toZonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" }),
 		lineRef,
 	});
 
 	try {
 		const payload = await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 20_000 });
-		const responseStatus = (
-			payload as { Envelope?: { Body?: { SubscribeResponse?: { Answer?: { ResponseStatus?: unknown } } } } }
-		)?.Envelope?.Body?.SubscribeResponse?.Answer?.ResponseStatus;
-		console.log(`     Subscribe[${type}] '${lineId}' ResponseStatus: ${JSON.stringify(responseStatus)}`);
-		const { ok, errorCondition } = extractSubscribeStatus(payload);
+		const { ok, errorCondition } = extractSubscribeResponseStatus(payload);
 		if (!ok) {
 			console.error(`✘ Subscribe[${type}] rejected for line '${lineId}': ${errorCondition}`);
 			return false;
@@ -113,21 +115,11 @@ async function unsubscribeLine(type: SubscriptionType, lineRef: string): Promise
 	const state = registry.get(registryKey(type, lineRef));
 	if (!state) return;
 
-	const lineId = extractSiriRef(lineRef)[3];
+	const lineId = extractSiriId(lineRef);
 	const body = DELETE_SUBSCRIPTION(REQUESTOR_REF, state.subscriptionRef);
 
 	try {
-		const payload = await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 10_000 });
-		const terminationStatus = (
-			payload as {
-				Envelope?: {
-					Body?: { DeleteSubscriptionResponse?: { Answer?: { TerminationResponseStatus?: unknown } } };
-				};
-			}
-		)?.Envelope?.Body?.DeleteSubscriptionResponse?.Answer?.TerminationResponseStatus;
-		console.log(
-			`     Unsubscribe[${type}] '${lineId}' TerminationResponseStatus: ${JSON.stringify(terminationStatus)}`,
-		);
+		await requestSiri(SIRI_ENDPOINT, body, { timeoutMs: 10_000 });
 		console.log(`✓ Unsubscribed[${type}] from line '${lineId}'`);
 	} catch (cause) {
 		console.error(`✘ DeleteSubscription[${type}] error for line '${lineId}'`, cause);
@@ -151,12 +143,12 @@ export async function syncSubscriptions(type: SubscriptionType, monitoredLines: 
 	const current = new Set(linesOfType(type));
 
 	const toAdd = [...desired].filter((l) => !current.has(l));
-	const toRemove = [...current].filter((l) => !desired.has(l));
+	// const toRemove = [...current].filter((l) => !desired.has(l));
 
-	for (const lineRef of toRemove) {
-		await unsubscribeLine(type, lineRef);
-		await sleep(PER_REQUEST_GAP_MS);
-	}
+	// for (const lineRef of toRemove) {
+	// 	await unsubscribeLine(type, lineRef);
+	// 	await sleep(PER_REQUEST_GAP_MS);
+	// }
 
 	let successes = 0;
 	for (const lineRef of toAdd) {
@@ -183,8 +175,4 @@ export async function terminateAllSubscriptions(): Promise<void> {
 	console.log("➔ Terminating all SIRI subscriptions");
 	const entries = [...registry.values()];
 	await Promise.allSettled(entries.map((s) => unsubscribeLine(s.type, s.lineRef)));
-}
-
-export function getRegistrySize(): number {
-	return registry.size;
 }

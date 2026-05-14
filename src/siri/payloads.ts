@@ -6,7 +6,7 @@ export const LINES_DISCOVERY = (requestorRef: string) =>
     <S:Body>
       <sw:LinesDiscovery xmlns:sw="http://wsdl.siri.org.uk" xmlns:siri="http://www.siri.org.uk/siri">
         <Request>
-          <siri:RequestTimestamp>${new Date().toISOString()}</siri:RequestTimestamp>
+          <siri:RequestTimestamp>${Temporal.Now.zonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" })}</siri:RequestTimestamp>
           <siri:RequestorRef>${requestorRef}</siri:RequestorRef>
           <siri:MessageIdentifier>BUS-TRACKER.FR::Message::${randomUUID()}</siri:MessageIdentifier>
         </Request>
@@ -16,7 +16,7 @@ export const LINES_DISCOVERY = (requestorRef: string) =>
   </S:Envelope>`;
 
 export const GET_VEHICLE_MONITORING = (requestorRef: string, lineRef: string) => {
-	const requestTimestamp = Temporal.Now.instant().toString();
+	const requestTimestamp = Temporal.Now.zonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" });
 	const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
 	return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
@@ -37,9 +37,31 @@ export const GET_VEHICLE_MONITORING = (requestorRef: string, lineRef: string) =>
     </S:Envelope>`;
 };
 
-export const GET_ESTIMATED_TIMETABLE = (requestorRef: string, lineRef: string, previewInterval = "PT1H") => {
-	const requestTimestamp = Temporal.Now.instant().toString();
+export type GetEstimatedTimetableInput = {
+	requestorRef: string;
+	lineRef: string;
+	previewInterval?: string;
+	startTime?: string;
+	directionRef?: string;
+	operatorRef?: string;
+	includeRegularJourney?: boolean;
+	language?: string;
+};
+
+export const GET_ESTIMATED_TIMETABLE = ({
+	requestorRef,
+	lineRef,
+	previewInterval = "PT1H",
+	startTime,
+	directionRef,
+	operatorRef,
+	includeRegularJourney,
+	language,
+}: GetEstimatedTimetableInput) => {
+	const requestTimestamp = Temporal.Now.zonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" });
 	const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
+	const tag = (name: string, value: string | number | boolean | undefined) =>
+		value === undefined ? "" : `<siri:${name}>${value}</siri:${name}>`;
 	return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
         <sw:GetEstimatedTimetable xmlns:sw="http://wsdl.siri.org.uk" xmlns:siri="http://www.siri.org.uk/siri">
@@ -51,12 +73,17 @@ export const GET_ESTIMATED_TIMETABLE = (requestorRef: string, lineRef: string, p
           <Request version="2.0:FR-IDF-2.4">
             <siri:RequestTimestamp>${requestTimestamp}</siri:RequestTimestamp>
             <siri:MessageIdentifier>${messageIdentifier}</siri:MessageIdentifier>
-            <siri:PreviewInterval>${previewInterval}</siri:PreviewInterval>
+            ${tag("StartTime", startTime)}
+            ${tag("PreviewInterval", previewInterval)}
+            ${tag("Language", language)}
             <siri:Lines>
               <siri:LineDirection>
                 <siri:LineRef>${lineRef}</siri:LineRef>
+                ${tag("DirectionRef", directionRef)}
               </siri:LineDirection>
             </siri:Lines>
+            ${operatorRef ? `<siri:Operators><siri:OperatorRef>${operatorRef}</siri:OperatorRef></siri:Operators>` : ""}
+            ${tag("IncludeRegularJourney", includeRegularJourney)}
           </Request>
           <RequestExtension/>
         </sw:GetEstimatedTimetable>
@@ -70,7 +97,6 @@ export type SubscribeVehicleMonitoringInput = {
 	subscriptionIdentifier: string;
 	initialTerminationTime: string;
 	lineRef: string;
-	// --- VehicleMonitoringRequest fields (optional) ---
 	previewInterval?: string;
 	startTime?: string;
 	directionRef?: string;
@@ -81,7 +107,6 @@ export type SubscribeVehicleMonitoringInput = {
 	vehicleMonitoringDetailLevel?: "minimum" | "basic" | "normal" | "calls" | "full";
 	maximumVehicles?: number;
 	language?: string;
-	// --- Subscription policy fields (optional) ---
 	incrementalUpdates?: boolean;
 	updateInterval?: string;
 	changeBeforeUpdates?: string;
@@ -107,7 +132,7 @@ export const SUBSCRIBE_VEHICLE_MONITORING = ({
 	updateInterval,
 	changeBeforeUpdates,
 }: SubscribeVehicleMonitoringInput) => {
-	const requestTimestamp = Temporal.Now.instant().toString();
+	const requestTimestamp = Temporal.Now.zonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" });
 	const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
 	const tag = (name: string, value: string | number | boolean | undefined) =>
 		value === undefined ? "" : `<siri:${name}>${value}</siri:${name}>`;
@@ -152,7 +177,7 @@ export const SUBSCRIBE_VEHICLE_MONITORING = ({
 };
 
 export const DELETE_SUBSCRIPTION = (requestorRef: string, subscriptionIdentifier: string) => {
-	const requestTimestamp = Temporal.Now.instant().toString();
+	const requestTimestamp = Temporal.Now.zonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" });
 	const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
 	return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
@@ -173,7 +198,7 @@ export const DELETE_SUBSCRIPTION = (requestorRef: string, subscriptionIdentifier
 };
 
 export const CHECK_STATUS = (requestorRef: string) => {
-	const requestTimestamp = Temporal.Now.instant().toString();
+	const requestTimestamp = Temporal.Now.zonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" });
 	const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
 	return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
@@ -196,8 +221,13 @@ export type SubscribeEstimatedTimetableInput = {
 	initialTerminationTime: string;
 	lineRef: string;
 	previewInterval?: string;
-	changeBeforeUpdates?: string;
+	startTime?: string;
+	directionRef?: string;
+	operatorRef?: string;
+	includeRegularJourney?: boolean;
+	language?: string;
 	incrementalUpdates?: boolean;
+	changeBeforeUpdates?: string;
 };
 
 export const SUBSCRIBE_ESTIMATED_TIMETABLE = ({
@@ -207,11 +237,18 @@ export const SUBSCRIBE_ESTIMATED_TIMETABLE = ({
 	initialTerminationTime,
 	lineRef,
 	previewInterval = "PT2H",
-	changeBeforeUpdates = "PT0S",
-	incrementalUpdates = false,
+	startTime,
+	directionRef,
+	operatorRef,
+	includeRegularJourney,
+	language,
+	incrementalUpdates,
+	changeBeforeUpdates,
 }: SubscribeEstimatedTimetableInput) => {
-	const requestTimestamp = Temporal.Now.instant().toString();
+	const requestTimestamp = Temporal.Now.zonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" });
 	const messageIdentifier = `BUS-TRACKER.FR::Message::${randomUUID()}`;
+	const tag = (name: string, value: string | number | boolean | undefined) =>
+		value === undefined ? "" : `<siri:${name}>${value}</siri:${name}>`;
 	return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
         <sw:Subscribe xmlns:sw="http://wsdl.siri.org.uk" xmlns:siri="http://www.siri.org.uk/siri">
@@ -229,15 +266,20 @@ export const SUBSCRIBE_ESTIMATED_TIMETABLE = ({
               <siri:EstimatedTimetableRequest version="2.0:FR-IDF-2.4">
                 <siri:RequestTimestamp>${requestTimestamp}</siri:RequestTimestamp>
                 <siri:MessageIdentifier>${messageIdentifier}</siri:MessageIdentifier>
-                <siri:PreviewInterval>${previewInterval}</siri:PreviewInterval>
+                ${tag("StartTime", startTime)}
+                ${tag("PreviewInterval", previewInterval)}
+                ${tag("Language", language)}
                 <siri:Lines>
                   <siri:LineDirection>
                     <siri:LineRef>${lineRef}</siri:LineRef>
+                    ${tag("DirectionRef", directionRef)}
                   </siri:LineDirection>
                 </siri:Lines>
+                ${operatorRef ? `<siri:Operators><siri:OperatorRef>${operatorRef}</siri:OperatorRef></siri:Operators>` : ""}
+                ${tag("IncludeRegularJourney", includeRegularJourney)}
               </siri:EstimatedTimetableRequest>
-              <siri:IncrementalUpdates>${incrementalUpdates}</siri:IncrementalUpdates>
-              <siri:ChangeBeforeUpdates>${changeBeforeUpdates}</siri:ChangeBeforeUpdates>
+              ${tag("IncrementalUpdates", incrementalUpdates)}
+              ${tag("ChangeBeforeUpdates", changeBeforeUpdates)}
             </siri:EstimatedTimetableSubscriptionRequest>
           </Request>
           <RequestExtension/>
@@ -253,7 +295,7 @@ export type NotifyResponseInput = {
 };
 
 function notifyResponseEnvelope(wrapper: string, { requestorRef, requestMessageRef, status }: NotifyResponseInput) {
-	const responseTimestamp = Temporal.Now.instant().toString();
+	const responseTimestamp = Temporal.Now.zonedDateTimeISO("Europe/Paris").toString({ timeZoneName: "never" });
 	return `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">
       <S:Body>
         <sw:${wrapper} xmlns:sw="http://wsdl.siri.org.uk" xmlns:siri="http://www.siri.org.uk/siri">
@@ -278,5 +320,3 @@ export const NOTIFY_VEHICLE_MONITORING_RESPONSE = (input: NotifyResponseInput) =
 
 export const NOTIFY_ESTIMATED_TIMETABLE_RESPONSE = (input: NotifyResponseInput) =>
 	notifyResponseEnvelope("NotifyEstimatedTimetableResponse", input);
-
-export type NotifyVehicleMonitoringResponseInput = NotifyResponseInput;

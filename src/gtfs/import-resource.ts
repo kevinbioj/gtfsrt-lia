@@ -14,8 +14,6 @@ export async function importResource(directory: string) {
 
 export type GtfsResource = Awaited<ReturnType<typeof importResource>>;
 
-// --- importServices
-
 type CalendarRecord = {
 	service_id: string;
 	monday: "0" | "1";
@@ -108,8 +106,6 @@ async function importServices(directory: string) {
 	return services;
 }
 
-// --- importStops
-
 type StopRecord = { stop_id: string; stop_name: string; location_type: "0" | string };
 
 type Stop = { id: string; name: string };
@@ -131,8 +127,6 @@ async function importStops(directory: string) {
 
 	return stops;
 }
-
-// --- importTrips
 
 type TripRecord = { trip_id: string; service_id: string; route_id: string; direction_id: "0" | "1" };
 
