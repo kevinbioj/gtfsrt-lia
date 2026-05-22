@@ -16,7 +16,8 @@ function envNumber(name: string, fallback: number): number {
 
 export const PORT = envNumber("PORT", 3000);
 export const GTFS_RESOURCE_URL =
-	process.env.GTFS_RESOURCE_URL ?? "https://www.data.gouv.fr/api/1/datasets/r/1e666e24-58ee-46b9-8952-ea2755ba88f2";
+	process.env.GTFS_RESOURCE_URL ??
+	"https://transport-data-gouv-fr-resource-history-prod.cellar-c2.services.clever-cloud.com/80254/80254.20260420.111241.762352.zip";
 export const SIRI_ENDPOINT = process.env.SIRI_ENDPOINT ?? "https://opendata.siri.transports-lia.fr/api";
 export const REQUESTOR_REF = process.env.REQUESTOR_REF ?? "opendata";
 
