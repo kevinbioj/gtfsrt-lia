@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Temporal } from "temporal-polyfill";
 
 import {
 	REQUESTOR_REF,

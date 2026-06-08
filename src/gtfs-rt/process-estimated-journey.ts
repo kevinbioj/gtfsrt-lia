@@ -1,5 +1,4 @@
 import GtfsRealtime from "gtfs-realtime-bindings";
-import { Temporal } from "temporal-polyfill";
 
 import type { Trip } from "../gtfs/import-resource.js";
 import type { useGtfsResource } from "../gtfs/load-resource.js";

@@ -1,5 +1,4 @@
 import GtfsRealtime from "gtfs-realtime-bindings";
-import { Temporal } from "temporal-polyfill";
 
 function dedupeTripUpdates(
 	tripUpdates: Map<string, GtfsRealtime.transit_realtime.ITripUpdate>,
