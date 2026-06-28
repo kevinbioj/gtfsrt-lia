@@ -114,7 +114,7 @@ async function importStops(directory: string) {
 
 	const stopsPath = join(directory, "stops.txt");
 	await parseCsv<StopRecord>(stopsPath, (stopRecord) => {
-		if (stopRecord.location_type !== "0") {
+		if (stopRecord.location_type !== "0" && stopRecord.location_type !== "") {
 			return;
 		}
 
