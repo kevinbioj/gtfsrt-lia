@@ -75,6 +75,8 @@ export function processEstimatedJourney(
 	gtfsResource: GtfsLiveResource,
 	store: RealtimeStore,
 ): void {
+	if (!journey.Monitored) return;
+
 	const match = findTrip(journey, gtfsResource);
 	if (!match) return;
 	const { trip, direct: directMatch } = match;

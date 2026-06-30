@@ -19,7 +19,8 @@ export function processVehicleActivity(
 ): void {
 	if (
 		vehicle.MonitoredVehicleJourney.VehicleLocation === undefined ||
-		vehicle.MonitoredVehicleJourney.MonitoredCall === undefined
+		vehicle.MonitoredVehicleJourney.MonitoredCall === undefined ||
+		!vehicle.MonitoredVehicleJourney.Monitored
 	) {
 		return;
 	}

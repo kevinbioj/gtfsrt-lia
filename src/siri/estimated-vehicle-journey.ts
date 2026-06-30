@@ -29,6 +29,7 @@ export type EstimatedVehicleJourney = {
 		DataFrameRef?: string;
 		DatedVehicleJourneyRef: string;
 	};
+	Monitored: boolean;
 	PublishedLineName?: string;
 	OriginRef?: string;
 	OriginName?: string;
