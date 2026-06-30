@@ -13,7 +13,7 @@ function envNumber(name: string, fallback: number): number {
 }
 
 export const PORT = envNumber("PORT", 3000);
-export const GTFS_RESOURCE_URL = process.env.GTFS_RESOURCE_URL ?? "https://gtfs.bus-tracker.fr/lia-ok.zip";
+export const GTFS_RESOURCE_URL = process.env.GTFS_RESOURCE_URL ?? "https://gtfs.bus-tracker.fr/lia.zip";
 export const SIRI_ENDPOINT = process.env.SIRI_ENDPOINT ?? "https://opendata.siri.transports-lia.fr/api";
 export const REQUESTOR_REF = process.env.REQUESTOR_REF ?? "opendata";
 
