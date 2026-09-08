@@ -2,23 +2,10 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { rateLimiter } from "hono-rate-limiter";
 
-import {
-	GTFS_RESOURCE_URL,
-	PORT,
-	REQUESTOR_REF,
-	SIRI_ENDPOINT,
-	SIRI_ET_POLL_INTERVAL_MS,
-	SIRI_SUBSCRIPTION_RENEWAL_MINUTES,
-} from "./config.js";
+import { GTFS_RESOURCE_URL, PORT } from "./config.js";
 import { useGtfsResource } from "./gtfs/load-resource.js";
 import { handleRequest } from "./gtfs-rt/handle-request.js";
-import { processEstimatedJourney } from "./gtfs-rt/process-estimated-journey.js";
-import { useRealtimeStore } from "./gtfs-rt/use-realtime-store.js";
-import { checkSiriStatus } from "./siri/check-status.js";
-import { fetchEstimatedTimetable } from "./siri/fetch-estimated-timetable.js";
-import { fetchMonitoredLines } from "./siri/fetch-monitored-lines.js";
-import { makeNotificationHandler } from "./siri/handle-notification.js";
-import { renewAllSubscriptions, syncSubscriptions } from "./siri/subscriptions.js";
+import { useUpstreamFeeds } from "./gtfs-rt/poll-upstream.js";
 
 console.log(` ,----.,--------.,------.,---.        ,------.,--------. ,--.   ,--.  ,---.
 '  .-./'--.  .--'|  .---'   .-',-----.|  .--. '--.  .--' |  |   \`--' /  O  \\
@@ -26,8 +13,8 @@ console.log(` ,----.,--------.,------.,---.        ,------.,--------. ,--.   ,--
 '  '--'  ||  |   |  |\`  .-'    |      |  |\\  \\   |  |    |  '--.|  ||  | |  |
  \`------' \`--'   \`--'   \`-----'       \`--' '--'  \`--'    \`-----'\`--'\`--' \`--'`);
 
-const store = useRealtimeStore();
 const gtfsResource = await useGtfsResource(GTFS_RESOURCE_URL);
+const store = useUpstreamFeeds(gtfsResource);
 
 const hono = new Hono();
 
@@ -38,100 +25,29 @@ const publicLimiter = rateLimiter({
 	handler: (c) => c.json({ code: 429, message: "Too many requests, please try again later." }, 429),
 });
 
-hono.get("/trip-updates", publicLimiter, (c) => handleRequest(c, "protobuf", store.tripUpdates, null));
-hono.get("/trip-updates.json", publicLimiter, (c) => handleRequest(c, "json", store.tripUpdates, null));
-hono.get("/vehicle-positions", publicLimiter, (c) => handleRequest(c, "protobuf", null, store.vehiclePositions));
-hono.get("/vehicle-positions.json", publicLimiter, (c) => handleRequest(c, "json", null, store.vehiclePositions));
-hono.get("/", publicLimiter, (c) =>
-	handleRequest(c, c.req.query("format") === "json" ? "json" : "protobuf", store.tripUpdates, store.vehiclePositions),
+hono.get("/trip-updates", publicLimiter, (c) =>
+	handleRequest(c, "protobuf", store.tripUpdates, store.tripUpdatesTimestamp),
 );
-
-hono.post("/siri/notify", makeNotificationHandler(gtfsResource, store));
+hono.get("/trip-updates.json", publicLimiter, (c) =>
+	handleRequest(c, "json", store.tripUpdates, store.tripUpdatesTimestamp),
+);
+hono.get("/vehicle-positions", publicLimiter, (c) =>
+	handleRequest(c, "protobuf", store.vehiclePositions, store.vehiclePositionsTimestamp),
+);
+hono.get("/vehicle-positions.json", publicLimiter, (c) =>
+	handleRequest(c, "json", store.vehiclePositions, store.vehiclePositionsTimestamp),
+);
+hono.get("/", publicLimiter, (c) =>
+	handleRequest(
+		c,
+		c.req.query("format") === "json" ? "json" : "protobuf",
+		[...store.tripUpdates, ...store.vehiclePositions],
+		Math.max(store.tripUpdatesTimestamp, store.vehiclePositionsTimestamp),
+	),
+);
 
 const server = serve({ fetch: hono.fetch, port: PORT });
 console.log(`➔ Listening on :${PORT}`);
-
-let monitoredLines = await fetchMonitoredLines(SIRI_ENDPOINT);
-console.log(`✓ ${monitoredLines.length} line(s) to monitor`);
-await syncSubscriptions("vm", monitoredLines);
-
-setInterval(
-	async () => {
-		console.log("➔ Refreshing monitored lines from SIRI");
-		try {
-			monitoredLines = await fetchMonitoredLines(SIRI_ENDPOINT);
-			await syncSubscriptions("vm", monitoredLines);
-		} catch (cause) {
-			console.error("✘ Failed to refresh monitored lines", cause);
-		}
-	},
-	Temporal.Duration.from({ hours: 1 }).total("milliseconds"),
-);
-
-let etPollIdx = 0;
-async function pollEstimatedTimetable(): Promise<void> {
-	if (monitoredLines.length === 0) {
-		setTimeout(pollEstimatedTimetable, SIRI_ET_POLL_INTERVAL_MS);
-		return;
-	}
-	if (etPollIdx >= monitoredLines.length) etPollIdx = 0;
-
-	const startedAt = Date.now();
-	const lineRef = monitoredLines[etPollIdx];
-	etPollIdx += 1;
-
-	try {
-		const journeys = await fetchEstimatedTimetable(SIRI_ENDPOINT, REQUESTOR_REF, lineRef);
-		for (const journey of journeys) {
-			try {
-				processEstimatedJourney(journey, gtfsResource, store);
-			} catch (cause) {
-				console.error("✘ Failed to process EstimatedVehicleJourney", cause);
-			}
-		}
-	} catch (cause) {
-		console.error(`✘ ET poll failed for ${lineRef}`, cause);
-	}
-
-	const wait = Math.max(SIRI_ET_POLL_INTERVAL_MS - (Date.now() - startedAt), 0);
-	setTimeout(pollEstimatedTimetable, wait);
-}
-pollEstimatedTimetable();
-
-setInterval(
-	async () => {
-		try {
-			await renewAllSubscriptions();
-		} catch (cause) {
-			console.error("✘ Subscription renewal failed", cause);
-		}
-	},
-	Temporal.Duration.from({ minutes: SIRI_SUBSCRIPTION_RENEWAL_MINUTES }).total("milliseconds"),
-);
-
-let lastServiceStartedTime: string | null = null;
-setInterval(
-	async () => {
-		const result = await checkSiriStatus(SIRI_ENDPOINT, REQUESTOR_REF);
-		if (!result?.status) return;
-		if (lastServiceStartedTime === null) {
-			lastServiceStartedTime = result.serviceStartedTime;
-			return;
-		}
-		if (result.serviceStartedTime !== null && result.serviceStartedTime !== lastServiceStartedTime) {
-			console.warn(
-				`✘ SIRI producer restarted (ServiceStartedTime ${lastServiceStartedTime} → ${result.serviceStartedTime}), re-subscribing`,
-			);
-			lastServiceStartedTime = result.serviceStartedTime;
-			try {
-				await renewAllSubscriptions();
-			} catch (cause) {
-				console.error("✘ Re-subscription after producer restart failed", cause);
-			}
-		}
-	},
-	Temporal.Duration.from({ seconds: 60 }).total("milliseconds"),
-);
 
 let shuttingDown = false;
 async function shutdown(signal: string): Promise<void> {
@@ -146,7 +62,6 @@ async function shutdown(signal: string): Promise<void> {
 	hardTimeout.unref();
 
 	server.close();
-	// await terminateAllSubscriptions();
 	process.exit(0);
 }
 

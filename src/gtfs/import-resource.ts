@@ -1,186 +1,84 @@
-import { access, constants } from "node:fs/promises";
 import { join } from "node:path";
 
 import { parseCsv } from "../utils/parse-csv.js";
-import { getPlainTime } from "../utils/temporal-cache.js";
 
-export async function importResource(directory: string) {
-	const services = await importServices(directory);
-	const stops = await importStops(directory);
-	const trips = await importTrips(directory, services, stops);
-	return { services, trips };
-}
+export type ShapePoint = { latitude: number; longitude: number; distance: number };
+
+export type TripStop = { sequence: number; stopId: string; distance: number };
+
+export type Trip = { id: string; shapeId: string; stops: TripStop[] };
 
 export type GtfsResource = Awaited<ReturnType<typeof importResource>>;
 
-type CalendarRecord = {
-	service_id: string;
-	monday: "0" | "1";
-	tuesday: "0" | "1";
-	wednesday: "0" | "1";
-	thursday: "0" | "1";
-	friday: "0" | "1";
-	saturday: "0" | "1";
-	sunday: "0" | "1";
-	start_date: string;
-	end_date: string;
-};
-
-type CalendarDatesRecord = {
-	service_id: string;
-	date: string;
-	exception_type: "1" | "2";
-};
-
-export type Service = {
-	id: string;
-	days: [boolean, boolean, boolean, boolean, boolean, boolean, boolean];
-	startDate: Temporal.PlainDate;
-	endDate: Temporal.PlainDate;
-	includedDays: Temporal.PlainDate[];
-	excludedDays: Temporal.PlainDate[];
-};
-
-async function importServices(directory: string) {
-	const services = new Map<string, Service>();
-
-	const calendarPath = join(directory, "calendar.txt");
-	const isCalendarReadable = await access(calendarPath, constants.R_OK)
-		.then(() => true)
-		.catch(() => false);
-
-	if (isCalendarReadable) {
-		await parseCsv<CalendarRecord>(calendarPath, (calendarRecord) => {
-			services.set(calendarRecord.service_id, {
-				id: calendarRecord.service_id,
-				days: [
-					Boolean(+calendarRecord.monday),
-					Boolean(+calendarRecord.tuesday),
-					Boolean(+calendarRecord.wednesday),
-					Boolean(+calendarRecord.thursday),
-					Boolean(+calendarRecord.friday),
-					Boolean(+calendarRecord.saturday),
-					Boolean(+calendarRecord.sunday),
-				],
-				startDate: Temporal.PlainDate.from(calendarRecord.start_date),
-				endDate: Temporal.PlainDate.from(calendarRecord.end_date),
-				excludedDays: [],
-				includedDays: [],
-			});
-		});
-	}
-
-	const calendarDatesPath = join(directory, "calendar_dates.txt");
-	const isCalendarDatesReadable = await access(calendarDatesPath, constants.R_OK)
-		.then(() => true)
-		.catch(() => false);
-
-	if (isCalendarDatesReadable) {
-		await parseCsv<CalendarDatesRecord>(calendarDatesPath, (calendarDatesRecord) => {
-			let service = services.get(calendarDatesRecord.service_id);
-
-			if (service === undefined) {
-				service = {
-					id: calendarDatesRecord.service_id,
-					days: [false, false, false, false, false, false, false],
-					startDate: Temporal.PlainDate.from("20000101"),
-					endDate: Temporal.PlainDate.from("20991231"),
-					excludedDays: [],
-					includedDays: [],
-				};
-
-				services.set(service.id, service);
-			}
-
-			const date = Temporal.PlainDate.from(calendarDatesRecord.date);
-
-			if (calendarDatesRecord.exception_type === "1") {
-				service.includedDays.push(date);
-			} else {
-				service.excludedDays.push(date);
-			}
-		});
-	}
-
-	return services;
+export async function importResource(directory: string) {
+	const shapes = await importShapes(directory);
+	const trips = await importTrips(directory);
+	return { shapes, trips };
 }
 
-type StopRecord = { stop_id: string; stop_name: string; location_type: "0" | string };
+type ShapeRecord = {
+	shape_id: string;
+	shape_pt_lat: string;
+	shape_pt_lon: string;
+	shape_pt_sequence: string;
+	shape_dist_traveled: string;
+};
 
-type Stop = { id: string; name: string };
+async function importShapes(directory: string) {
+	const shapes = new Map<string, (ShapePoint & { sequence: number })[]>();
 
-async function importStops(directory: string) {
-	const stops = new Map<string, Stop>();
-
-	const stopsPath = join(directory, "stops.txt");
-	await parseCsv<StopRecord>(stopsPath, (stopRecord) => {
-		if (stopRecord.location_type !== "0" && stopRecord.location_type !== "") {
-			return;
+	await parseCsv<ShapeRecord>(join(directory, "shapes.txt"), (shapeRecord) => {
+		let points = shapes.get(shapeRecord.shape_id);
+		if (points === undefined) {
+			points = [];
+			shapes.set(shapeRecord.shape_id, points);
 		}
 
-		stops.set(stopRecord.stop_id, {
-			id: stopRecord.stop_id,
-			name: stopRecord.stop_name,
+		points.push({
+			latitude: +shapeRecord.shape_pt_lat,
+			longitude: +shapeRecord.shape_pt_lon,
+			distance: +shapeRecord.shape_dist_traveled,
+			sequence: +shapeRecord.shape_pt_sequence,
 		});
 	});
 
-	return stops;
+	shapes.forEach((points) => {
+		points.sort((a, b) => a.sequence - b.sequence);
+	});
+
+	return shapes as Map<string, ShapePoint[]>;
 }
 
-type TripRecord = { trip_id: string; service_id: string; route_id: string; direction_id: "0" | "1" };
+type TripRecord = { trip_id: string; shape_id: string };
 
-type StopTimeRecord = { trip_id: string; stop_sequence: string; stop_id: string; departure_time: string };
+type StopTimeRecord = { trip_id: string; stop_id: string; stop_sequence: string; shape_dist_traveled: string };
 
-type StopTime = { sequence: number; stop: Stop; time: Temporal.PlainTime; dayShift?: number };
-
-export type Trip = { id: string; service: Service; routeId: string; directionId: number; stopTimes: StopTime[] };
-
-async function importTrips(directory: string, services: Map<string, Service>, stops: Map<string, Stop>) {
+async function importTrips(directory: string) {
 	const trips = new Map<string, Trip>();
 
-	const tripsPath = join(directory, "trips.txt");
-	await parseCsv<TripRecord>(tripsPath, (tripRecord) => {
-		const service = services.get(tripRecord.service_id);
-		if (service === undefined) {
-			return;
-		}
-
+	await parseCsv<TripRecord>(join(directory, "trips.txt"), (tripRecord) => {
 		trips.set(tripRecord.trip_id, {
 			id: tripRecord.trip_id,
-			service,
-			routeId: tripRecord.route_id,
-			directionId: +tripRecord.direction_id,
-			stopTimes: [],
+			shapeId: tripRecord.shape_id,
+			stops: [],
 		});
 	});
 
-	const stopTimesPath = join(directory, "stop_times.txt");
-	await parseCsv<StopTimeRecord>(stopTimesPath, (stopTimeRecord) => {
+	await parseCsv<StopTimeRecord>(join(directory, "stop_times.txt"), (stopTimeRecord) => {
 		const trip = trips.get(stopTimeRecord.trip_id);
 		if (trip === undefined) {
 			return;
 		}
 
-		const stop = stops.get(stopTimeRecord.stop_id);
-		if (stop === undefined) {
-			return;
-		}
-
-		const [hour, minute, second] = stopTimeRecord.departure_time.split(":").map(Number);
-		const dayShift = hour % 24;
-
-		trip.stopTimes.push({
+		trip.stops.push({
 			sequence: +stopTimeRecord.stop_sequence,
-			stop,
-			time: getPlainTime(
-				`${String(hour % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`,
-			),
-			dayShift: dayShift || undefined,
+			stopId: stopTimeRecord.stop_id,
+			distance: +stopTimeRecord.shape_dist_traveled,
 		});
 	});
 
 	trips.forEach((trip) => {
-		trip.stopTimes.sort((a, b) => a.sequence - b.sequence);
+		trip.stops.sort((a, b) => a.sequence - b.sequence);
 	});
 
 	return trips;

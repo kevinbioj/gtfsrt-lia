@@ -1,9 +1,3 @@
-function requireEnv(name: string): string {
-	const v = process.env[name];
-	if (!v) throw new Error(`Missing required env var ${name}`);
-	return v;
-}
-
 function envNumber(name: string, fallback: number): number {
 	const v = process.env[name];
 	if (!v) return fallback;
@@ -14,16 +8,17 @@ function envNumber(name: string, fallback: number): number {
 
 export const PORT = envNumber("PORT", 3000);
 export const GTFS_RESOURCE_URL = process.env.GTFS_RESOURCE_URL ?? "https://gtfs.bus-tracker.fr/lia.zip";
-export const SIRI_ENDPOINT = process.env.SIRI_ENDPOINT ?? "https://opendata.siri.transports-lia.fr/api";
-export const REQUESTOR_REF = process.env.REQUESTOR_REF ?? "opendata";
 
-export const SIRI_CONSUMER_ADDRESS = requireEnv("SIRI_CONSUMER_ADDRESS");
-export const SIRI_NOTIFY_TOKEN = requireEnv("SIRI_NOTIFY_TOKEN");
+export const TRIP_UPDATES_URL =
+	process.env.TRIP_UPDATES_URL ?? "https://opendata.transports-lia.fr/gtfs-rt/TripUpdate.pb";
+export const VEHICLE_POSITIONS_URL =
+	process.env.VEHICLE_POSITIONS_URL ?? "https://opendata.transports-lia.fr/gtfs-rt/VehiclePosition.pb";
 
-export const SIRI_SUBSCRIPTION_TTL_MINUTES = envNumber("SIRI_SUBSCRIPTION_TTL_MINUTES", 15);
-export const SIRI_SUBSCRIPTION_RENEWAL_MINUTES = envNumber("SIRI_SUBSCRIPTION_RENEWAL_MINUTES", 10);
-export const SIRI_ET_POLL_INTERVAL_MS = envNumber("SIRI_ET_POLL_INTERVAL_MS", 2000);
+export const POLL_INTERVAL_MS = envNumber("POLL_INTERVAL_MS", 15_000);
 
-export const SWEEP_THRESHOLD = Temporal.Duration.from({
-	minutes: envNumber("SWEEP_THRESHOLD_MINUTES", 10),
-}).total("milliseconds");
+/** Distance restante jusqu'au prochain arrêt, en mètres, en dessous de laquelle on considère le véhicule à quai. */
+export const STOPPED_AT_RADIUS = envNumber("STOPPED_AT_RADIUS", 30);
+/** Idem pour l'approche de l'arrêt. */
+export const INCOMING_AT_RADIUS = envNumber("INCOMING_AT_RADIUS", 100);
+/** Recul autorisé, en mètres, lors de la reprise de la projection d'un véhicule déjà localisé. */
+export const BACKWARD_TOLERANCE = envNumber("BACKWARD_TOLERANCE", 150);

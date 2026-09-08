@@ -1,44 +1,25 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Cron } from "croner";
-
-import { getOperatingTripsByLineAndDirection } from "../utils/get-operating-trips.js";
-import { resetServiceOperationCache } from "../utils/is-service-operating-on.js";
 
 import { downloadResource } from "./download-resource.js";
-import { type GtfsResource, importResource, type Trip } from "./import-resource.js";
-
-function buildTripsBySaeivCourse(gtfs: GtfsResource): Map<string, Trip> {
-	const index = new Map<string, Trip>();
-	for (const trip of gtfs.trips.values()) {
-		index.set(trip.id.split("-")[0], trip);
-	}
-	return index;
-}
+import { importResource } from "./import-resource.js";
 
 let currentInterval: NodeJS.Timeout | undefined;
-let operatingTripsJob: Cron | undefined;
+
+export type GtfsResourceHolder = Awaited<ReturnType<typeof useGtfsResource>>;
 
 export async function useGtfsResource(resourceUrl: string) {
 	const initialResource = await loadResource(resourceUrl);
 
 	const resource = {
 		gtfs: initialResource.resource,
-		operatingTripsByLineDirection: getOperatingTripsByLineAndDirection(initialResource.resource),
-		tripsBySaeivCourse: buildTripsBySaeivCourse(initialResource.resource),
 		lastModified: initialResource.lastModified,
 		importedAt: Temporal.Now.instant(),
 	};
 
 	if (currentInterval !== undefined) {
 		clearInterval(currentInterval);
-	}
-
-	if (operatingTripsJob === undefined) {
-		operatingTripsJob = new Cron("0 3 * * *", () => {
-			resource.operatingTripsByLineDirection = getOperatingTripsByLineAndDirection(resource.gtfs);
-		});
 	}
 
 	currentInterval = setInterval(
@@ -66,8 +47,6 @@ export async function useGtfsResource(resourceUrl: string) {
 				const newResource = await loadResource(resourceUrl);
 				resource.gtfs = newResource.resource;
 				resource.lastModified = newResource.lastModified;
-				resource.operatingTripsByLineDirection = getOperatingTripsByLineAndDirection(resource.gtfs);
-				resource.tripsBySaeivCourse = buildTripsBySaeivCourse(resource.gtfs);
 				resource.importedAt = Temporal.Now.instant();
 			} catch (cause) {
 				console.error(`✘ GTFS update routine failed:`, cause);
@@ -88,8 +67,7 @@ async function loadResource(resourceUrl: string) {
 	try {
 		const { lastModified } = await downloadResource(resourceUrl, workingDirectory);
 		const resource = await importResource(workingDirectory);
-		resetServiceOperationCache();
-		console.log("✓ Successfully loaded resource!");
+		console.log(`✓ Successfully loaded resource! (${resource.trips.size} trips, ${resource.shapes.size} shapes)`);
 		return { resource, lastModified };
 	} catch (cause) {
 		throw new Error("Failed to load GTFS resource", { cause });

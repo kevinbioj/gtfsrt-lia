@@ -7,10 +7,10 @@ import { createFeed } from "./create-feed.js";
 export function handleRequest(
 	c: Context,
 	output: "protobuf" | "json",
-	tripUpdates: Map<string, GtfsRealtime.transit_realtime.ITripUpdate> | null,
-	vehiclePositions: Map<string, GtfsRealtime.transit_realtime.IVehiclePosition> | null,
+	entities: GtfsRealtime.transit_realtime.IFeedEntity[],
+	timestamp: number,
 ) {
-	const feed = createFeed(tripUpdates, vehiclePositions);
+	const feed = createFeed(entities, timestamp);
 
 	if (output === "json") {
 		return c.json(feed, 200);
