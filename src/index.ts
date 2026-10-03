@@ -5,6 +5,7 @@ import { rateLimiter } from "hono-rate-limiter";
 import { GTFS_RESOURCE_URL, PORT } from "./config.js";
 import { useGtfsResource } from "./gtfs/load-resource.js";
 import { handleRequest } from "./gtfs-rt/handle-request.js";
+import { useServiceAlerts } from "./gtfs-rt/poll-alerts.js";
 import { useUpstreamFeeds } from "./gtfs-rt/poll-upstream.js";
 
 console.log(` ,----.,--------.,------.,---.        ,------.,--------. ,--.   ,--.  ,---.
@@ -15,6 +16,7 @@ console.log(` ,----.,--------.,------.,---.        ,------.,--------. ,--.   ,--
 
 const gtfsResource = await useGtfsResource(GTFS_RESOURCE_URL);
 const store = useUpstreamFeeds(gtfsResource);
+const alerts = useServiceAlerts();
 
 const hono = new Hono();
 
@@ -37,12 +39,18 @@ hono.get("/vehicle-positions", publicLimiter, (c) =>
 hono.get("/vehicle-positions.json", publicLimiter, (c) =>
 	handleRequest(c, "json", store.vehiclePositions, store.vehiclePositionsTimestamp),
 );
+hono.get("/service-alerts", publicLimiter, (c) =>
+	handleRequest(c, "protobuf", alerts.serviceAlerts, alerts.serviceAlertsTimestamp),
+);
+hono.get("/service-alerts.json", publicLimiter, (c) =>
+	handleRequest(c, "json", alerts.serviceAlerts, alerts.serviceAlertsTimestamp),
+);
 hono.get("/", publicLimiter, (c) =>
 	handleRequest(
 		c,
 		c.req.query("format") === "json" ? "json" : "protobuf",
-		[...store.tripUpdates, ...store.vehiclePositions],
-		Math.max(store.tripUpdatesTimestamp, store.vehiclePositionsTimestamp),
+		[...store.tripUpdates, ...store.vehiclePositions, ...alerts.serviceAlerts],
+		Math.max(store.tripUpdatesTimestamp, store.vehiclePositionsTimestamp, alerts.serviceAlertsTimestamp),
 	),
 );
 

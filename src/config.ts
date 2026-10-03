@@ -16,6 +16,11 @@ export const VEHICLE_POSITIONS_URL =
 
 export const POLL_INTERVAL_MS = envNumber("POLL_INTERVAL_MS", 15_000);
 
+export const SERVICE_ALERTS_URL =
+	process.env.SERVICE_ALERTS_URL ??
+	"https://api.maas-fr.cityway.fr/disrupt/api/v1/fr/disruptions?IncludeLines=true&OperatorsIds=25";
+export const ALERTS_POLL_INTERVAL_MS = envNumber("ALERTS_POLL_INTERVAL_MS", 300_000);
+
 /** Distance restante jusqu'au prochain arrêt, en mètres, en dessous de laquelle on considère le véhicule à quai. */
 export const STOPPED_AT_RADIUS = envNumber("STOPPED_AT_RADIUS", 30);
 /** Idem pour l'approche de l'arrêt. */
